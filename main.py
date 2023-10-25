@@ -162,7 +162,7 @@ def predict():
     cursor.execute(insert_query, new_data)
     mysql.commit()
     cursor.close()
-    return render_template('result.html', prediction_text='Result: {}'.format(res_Val))
+    return jsonify(res_Val)
 
 
 
