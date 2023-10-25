@@ -2,9 +2,6 @@ import pickle
 import numpy as np
 import pandas as pd
 from flask import Flask, request, render_template, jsonify
-from flask_pymongo import PyMongo
-from flaskext.mysql import MySQL
-#from flask_sqlalchemy import SQLAlchemy
 import mysql.connector
 
 import warnings
@@ -26,7 +23,8 @@ mysql_config = {
     'port': 3306,
 }
 mysql = mysql.connector.connect(**mysql_config)
-
+version = mysql.get_server_version()
+print("MySQL Connector Version:", version)
 #db = SQLAlchemy(app)
 #app.config[
    # "MONGO_URI"] = 'mongodb://jananiim21:1234@ac-wqwdffe-shard-00-00.ckrfkgt.mongodb.net:27017,ac-wqwdffe-shard-00-01.ckrfkgt.mongodb.net:27017,ac-wqwdffe-shard-00-02.ckrfkgt.mongodb.net:27017/patient_database?ssl=true&replicaSet=atlas-vv8wvd-shard-0&authSource=admin&retryWrites=true&w=majority'
@@ -164,7 +162,7 @@ def predict():
     cursor.execute(insert_query, new_data)
     mysql.commit()
     cursor.close()
-    return jsonify(res_Val)
+    return render_template('result.html', prediction_text='Result: {}'.format(res_Val))
 
 
 
