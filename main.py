@@ -3,14 +3,16 @@ import numpy as np
 import pandas as pd
 from flask import Flask, request, render_template, jsonify
 import mysql.connector
+import json
+from flask_cors import CORS
 
 import warnings
 warnings.filterwarnings('ignore')
 
 pickled_model = pickle.load(open('random_forest_model.pkl', 'rb'))
 
-app = Flask(__name__)
-
+app = Flask(__name__, template_folder='templates')
+CORS(app, resources={r"/api/": {"origins": ""}})
 
 #app.config['MONGO_DBNAME'] = 'patient_database'
 # app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://j6qbx3bgjysst4jr:mcbsdk2s27ldf37t@frwahxxknm9kwy6c.cbetxkdyhwsb.us-east-1.rds.amazonaws.com:3306/nkw2tiuvgv6ufu1z'
@@ -24,7 +26,7 @@ mysql_config = {
 }
 mysql = mysql.connector.connect(**mysql_config)
 version = mysql.get_server_version()
-print("MySQL Connector Version:", version)
+
 #db = SQLAlchemy(app)
 #app.config[
    # "MONGO_URI"] = 'mongodb://jananiim21:1234@ac-wqwdffe-shard-00-00.ckrfkgt.mongodb.net:27017,ac-wqwdffe-shard-00-01.ckrfkgt.mongodb.net:27017,ac-wqwdffe-shard-00-02.ckrfkgt.mongodb.net:27017/patient_database?ssl=true&replicaSet=atlas-vv8wvd-shard-0&authSource=admin&retryWrites=true&w=majority'
@@ -44,8 +46,8 @@ def home():
 def predict():
 
     #db = mongo.db.patient_data_collection
-
-    data = request.get_json()
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    data = request.json(headers=headers)
     cursor = mysql.cursor()
 
     # Define the SQL query with placeholders
@@ -162,9 +164,9 @@ def predict():
     cursor.execute(insert_query, new_data)
     mysql.commit()
     cursor.close()
+
     return jsonify(res_Val)
 
 
-
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', port=5000)
