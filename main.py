@@ -9,7 +9,7 @@ pickled_model = pickle.load(open('random_forest_model.pkl', 'rb'))
 
 app = Flask(__name__)
 
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "https://thyroid-ss1-64739381ce70.herokuapp.com/"}})
 
 mysql_config = {
     'host': "frwahxxknm9kwy6c.cbetxkdyhwsb.us-east-1.rds.amazonaws.com",
