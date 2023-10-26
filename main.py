@@ -9,6 +9,8 @@ pickled_model = pickle.load(open('random_forest_model.pkl', 'rb'))
 
 app = Flask(__name__)
 
+CORS(app)
+
 mysql_config = {
     'host': "frwahxxknm9kwy6c.cbetxkdyhwsb.us-east-1.rds.amazonaws.com",
     'user': "j6qbx3bgjysst4jr",
@@ -18,7 +20,7 @@ mysql_config = {
 }
 mysql = mysql.connector.connect(**mysql_config)
 
-CORS(app)
+
 
 @app.route('/')
 def home():
