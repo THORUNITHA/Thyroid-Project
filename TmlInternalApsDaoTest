@@ -1,0 +1,134 @@
+ package com.baml.tml.tmlaps.dao;
+
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
+
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
+import com.baml.tml.tmlbase.trade.util.AllocationType;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlInternalApsDaoTest {
+
+    @InjectMocks
+    private TmlInternalApsDao dao;
+
+    @Mock @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock private Connection connection;
+    @Mock private PreparedStatement preparedStatement;
+    @Mock private ResultSet resultSet;
+
+    @Before
+    public void setup() throws SQLException {
+        // Inject query values
+        ReflectionTestUtils.setField(dao, "reportUnMatchedQry", "UNMATCHED_QUERY");
+        ReflectionTestUtils.setField(dao, "reportMatchedQry", "MATCHED_QUERY");
+        ReflectionTestUtils.setField(dao, "reportAllocUnMatchedQry", "ALLOC_UNMATCHED_QUERY");
+        ReflectionTestUtils.setField(dao, "reportAllocMatchedQry", "ALLOC_MATCHED_QUERY");
+
+        // Common mock setup
+        when(gmiQueryDao.connection()).thenReturn(connection);
+        when(tmlQueryDao.connection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
+    }
+
+    @Test
+    public void testCsvReport_InternalAps() throws SQLException, IOException {
+        // Setup mock results for both reports
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, false);  // Single row
+        
+        Map<String, Object> result = dao.csvReport(AllocationType.INTERNALAPS);
+        
+        assertTrue(result.containsKey("ALLOC_MATCHED_REPORT"));
+        assertTrue(result.containsKey("ALLOC_UNMATCHED_REPORT"));
+        assertTrue(((Set<?>) result.get("MATCHED_GROUPS")).isEmpty());
+    }
+
+    @Test
+    public void testMatchedCsvReport_WithFillLegnd() throws Exception {
+        // Mock result set data
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, true, false);
+        when(resultSet.getString(2)).thenReturn("GROUP1", "GROUP2");  // Column indexes are 1-based
+        when(resultSet.getString(18)).thenReturn("FILL_LEGND", null);
+
+        Map<String, Object> map = new HashMap<>();
+        dao.matchedCsvReport(map, AllocationType.INTERNALAPS);
+
+        assertEquals(1, map.get("MATCHED_NUMBER_FILL_LINES"));
+        assertEquals(Set.of("GROUP1", "GROUP2"), map.get("MATCHED_GROUPS"));
+    }
+
+    @Test
+    public void testUnmatchedCsvReport_MixedStatuses() throws Exception {
+        // Mock result set data
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, true, false);
+        when(resultSet.getString(1)).thenReturn("NOT MATCHED", "INVALID");  // Status column
+        when(resultSet.getString(2)).thenReturn("GROUP3", "GROUP4");      // Group column
+        when(resultSet.getString(3)).thenReturn("FILL", null);             // Fill column
+
+        Map<String, Object> map = new HashMap<>();
+        dao.unmatchedCsvReport(map, AllocationType.INTERNALAPS);
+
+        assertEquals(Set.of("GROUP3"), map.get("UNMATCHED_GROUPS"));
+        assertEquals(Set.of("GROUP4"), map.get("INVALID_GROUPS"));
+        assertEquals(1, map.get("UNMATCHED_NUMBER_FILL_LINES"));
+    }
+
+    @Test
+    public void testDatabaseErrorHandling() throws SQLException {
+        when(preparedStatement.executeQuery()).thenThrow(new SQLException("Connection failed"));
+
+        Map<String, Object> map = new HashMap<>();
+        dao.matchedCsvReport(map, AllocationType.INTERNALAPS);
+
+        assertNotNull(map.get("ALLOC_MATCHED_REPORT"));
+        verify(gmiQueryDao).close(null, preparedStatement, connection);
+    }
+
+    @Test
+    public void testEmptyResultSet() throws SQLException {
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(false);  // No results
+
+        Map<String, Object> map = new HashMap<>();
+        dao.unmatchedCsvReport(map, AllocationType.INTERNALAPS);
+
+        assertTrue(((Set<?>) map.get("UNMATCHED_GROUPS")).isEmpty());
+        assertEquals(0, map.get("UNMATCHED_NUMBER_FILL_LINES"));
+    }
+
+    @Test
+    public void testAddDays() {
+        // Indirectly test date formatting through report generation
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        
+        dao.csvReport(AllocationType.INTERNALAPS);
+        verify(preparedStatement, atLeastOnce()).setString(1, anyString());
+        verify(preparedStatement, atLeastOnce()).setString(2, anyString());
+    }
+}
