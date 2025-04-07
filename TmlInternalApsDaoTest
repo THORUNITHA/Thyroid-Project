@@ -52,6 +52,35 @@ public class TmlInternalApsDaoTest {
         when(gmiQueryDao.connection()).thenReturn(connection);
         when(tmlQueryDao.connection()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
+
+@Before
+public void setup() throws SQLException {
+    // ... existing setup code ...
+
+    // Mock ResultSet metadata
+    ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+    when(resultSet.getMetaData()).thenReturn(metaData);
+    
+    // Mock at least 18 columns (to match column index 17 in your code)
+    when(metaData.getColumnCount()).thenReturn(18); 
+    
+    // Mock column names (adjust according to your actual columns)
+    when(metaData.getColumnName(anyInt())).thenAnswer(invocation -> {
+        int index = invocation.getArgument(0);
+        return "COLUMN_" + index;  // Generic column name
+    });
+}
+@Test
+public void testCsvReport_InternalAps() throws SQLException, IOException {
+    // Mock result set data
+    when(resultSet.next()).thenReturn(true, false);  // One row
+    when(resultSet.getString(anyInt())).thenReturn("DUMMY_VALUE");
+
+    Map<String, Object> result = dao.csvReport(AllocationType.INTERNALAPS);
+
+    assertTrue(result.containsKey("ALLOC_MATCHED_REPORT"));
+    assertTrue(result.containsKey("ALLOC_UNMATCHED_REPORT"));
+}
     }
 
     @Test
