@@ -1,4 +1,10 @@
 
+verify(tmlApsCHFeedUtil).updateMatchedStatus(
+    argThat(status -> status.getStatus().contains("NMY")),  // or use any()
+    any(AllocContainer.class)
+);
+
+
 import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
