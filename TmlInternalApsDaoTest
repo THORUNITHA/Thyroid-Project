@@ -1,4 +1,24 @@
- package com.baml.tml.tmlaps.dao;
+import java.lang.reflect.Field;
+
+private List<String> getPrivateListField(Object obj, String fieldName) throws Exception {
+    Field field = obj.getClass().getDeclaredField(fieldName);
+    field.setAccessible(true);
+    return (List<String>) field.get(obj);
+}
+
+@Test
+public void testInit() throws Exception {
+    List<String> namMkts = getPrivateListField(service, "namMkts");
+    List<String> bamlMktBrkrs = getPrivateListField(service, "bamlMktBrkrs");
+
+    Assert.assertEquals(1, namMkts.size());
+    Assert.assertTrue(namMkts.contains("TEST_EXCHANGE"));
+    Assert.assertEquals(1, bamlMktBrkrs.size());
+    Assert.assertTrue(bamlMktBrkrs.contains("BAML_BROKER"));
+}
+
+
+package com.baml.tml.tmlaps.dao;
 
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.anyString;
