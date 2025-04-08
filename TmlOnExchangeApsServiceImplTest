@@ -1,0 +1,120 @@
+ import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
+
+import com.baml.tml.tmlaps.model.MessageStatus;
+import com.baml.tml.tmlaps.onExchange.service.impl.util.TmlApsCHFeedUtil;
+import com.baml.tml.tmlbase.trade.model.AllocContainer;
+import com.baml.tml.tmlbase.trade.persistence.dao.QueryDaodbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.TAllocationGenericId;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @Mock
+    private QueryDaodbc tmlQueryDao;
+
+    @Mock
+    private TmlApsCHFeedUtil tmlApsCHFeedUtil;
+
+    @Mock
+    private SqlRowSet namMarketsRowSet;
+
+    @Mock
+    private SqlRowSet bamlBrokersRowSet;
+
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+
+    @Before
+    public void setUp() throws Exception {
+        // Mock PostConstruct init
+        when(namMarketsRowSet.next()).thenReturn(true).thenReturn(false);
+        when(namMarketsRowSet.getString("ALIAS_C")).thenReturn("TEST_EXCHANGE");
+        
+        when(bamlBrokersRowSet.next()).thenReturn(true).thenReturn(false);
+        when(bamlBrokersRowSet.getString("EXCHANGE_BROKER")).thenReturn("BAML_BROKER");
+        
+        when(tmlQueryDao.getRowSet(anyString()))
+            .thenReturn(namMarketsRowSet)  // For NAM_MARKETS
+            .thenReturn(bamlBrokersRowSet); // For BAML_BROKERS
+        
+        service.init();
+    }
+
+    @Test
+    public void testInit() {
+        // Verify exchanges and brokers loaded
+        Assert.assertEquals(1, service.namMkts.size());
+        Assert.assertTrue(service.namMkts.contains("TEST_EXCHANGE"));
+        Assert.assertEquals(1, service.bamlMktBrkrs.size());
+        Assert.assertTrue(service.bamlMktBrkrs.contains("BAML_BROKER"));
+    }
+
+    @Test
+    public void testProcessByEachFill_NoAllocations() {
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.emptyList());
+        
+        service.processByEachFill();
+        
+        verify(tmlApsCHFeedUtil, never()).updateStatus(any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    public void testProcessByEachFill_ValidMatch() {
+        // Setup mock allocation
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("CLIENT1");
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(BigDecimal.valueOf(100.0));
+        alloc.setQuantityI(10);
+        alloc.setGmiExchCdC("CME");
+        alloc.setExecBrokerC("BAML");
+        
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.singletonList(alloc));
+        
+        // Mock ClearHouse feed data
+        // (This would require deeper mocking of getClearHouseFeed methods)
+        
+        service.processByEachFill();
+        
+        // Verify status update
+        verify(tmlApsCHFeedUtil).updateStatus(
+            argThat(status -> "MATCHED".equals(status.getStatus())),
+            anyList(),
+            any(AllocContainer.class),
+            eq(true));
+    }
+
+    @Test
+    public void testProcessBySum_MatchingSum() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("CLIENT2");
+        alloc.setTmlAllocGroupIdC("GROUP2");
+        alloc.setPriceD(BigDecimal.valueOf(200.0));
+        alloc.setQuantityI(20);
+        alloc.setGmiExchCdC("ICE");
+        
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.singletonList(alloc));
+        
+        service.processBySum();
+        
+        verify(tmlApsCHFeedUtil).updateStatus(
+            argThat(status -> "MATCHED".equals(status.getStatus())),
+            anyList(),
+            any(AllocContainer.class),
+            anyBoolean());
+    }
+}
