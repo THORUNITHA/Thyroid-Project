@@ -1,3 +1,174 @@
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+
+import org.junit.*;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
+
+import com.baml.tml.tmlaps.model.MessageStatus;
+import com.baml.tml.tmlaps.onExchange.service.impl.TmlOnExchangeApsServiceImpl;
+import com.baml.tml.tmlaps.onExchange.service.impl.util.TmlApsCHFeedUtil;
+import com.baml.tml.tmlbase.trade.model.AllocContainer;
+import com.baml.tml.tmlbase.trade.persistence.dao.QueryDaodbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.TAllocationGenericId;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @Mock private QueryDaodbc tmlQueryDao;
+    @Mock private TmlApsCHFeedUtil tmlApsCHFeedUtil;
+    @Mock private SqlRowSet namMarketsRowSet;
+    @Mock private SqlRowSet bamlBrokersRowSet;
+
+    @InjectMocks private TmlOnExchangeApsServiceImpl service;
+
+    @Before
+    public void setUp() throws Exception {
+        when(namMarketsRowSet.next()).thenReturn(true).thenReturn(false);
+        when(namMarketsRowSet.getString("ALIAS_C")).thenReturn("TEST_EXCHANGE");
+
+        when(bamlBrokersRowSet.next()).thenReturn(true).thenReturn(false);
+        when(bamlBrokersRowSet.getString("EXCHANGE_BROKER")).thenReturn("BAML_BROKER");
+
+        when(tmlQueryDao.getRowSet(anyString()))
+            .thenReturn(namMarketsRowSet)
+            .thenReturn(bamlBrokersRowSet);
+
+        service.init();
+    }
+
+    @Test
+    public void testInit() {
+        Assert.assertEquals(1, service.namMkts.size());
+        Assert.assertTrue(service.namMkts.contains("TEST_EXCHANGE"));
+        Assert.assertEquals(1, service.bamlMktBrkrs.size());
+        Assert.assertTrue(service.bamlMktBrkrs.contains("BAML_BROKER"));
+    }
+
+    @Test
+    public void testProcessByEachFill_NoAllocations() {
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.emptyList());
+
+        service.processByEachFill();
+
+        verify(tmlApsCHFeedUtil, never()).updateStatus(any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    public void testProcessByEachFill_ValidMatch() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("CLIENT1");
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(BigDecimal.valueOf(100.0));
+        alloc.setQuantityI(10);
+        alloc.setGmiExchCdC("CME");
+        alloc.setExecBrokerC("BAML");
+
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.singletonList(alloc));
+
+        service.processByEachFill();
+
+        verify(tmlApsCHFeedUtil).updateMatchedStatus(
+            argThat(status -> status.getStatus().contains("NMY") || status.getStatus().equals("MATCHED")),
+            any(AllocContainer.class));
+    }
+
+    @Test
+    public void testProcessBySum_MatchingSum() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("CLIENT2");
+        alloc.setTmlAllocGroupIdC("GROUP2");
+        alloc.setPriceD(BigDecimal.valueOf(200.0));
+        alloc.setQuantityI(20);
+        alloc.setGmiExchCdC("ICE");
+
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.singletonList(alloc));
+
+        service.processBySum();
+
+        verify(tmlApsCHFeedUtil).updateMatchedStatus(
+            argThat(status -> status.getStatus().contains("NMY") || status.getStatus().equals("MATCHED")),
+            any(AllocContainer.class));
+    }
+
+    // -------------------------------
+    // New Tests for processByReplayPartialGroups()
+    // -------------------------------
+
+    @Test
+    public void testProcessByReplayPartialGroups_MatchingFills() {
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+        AllocContainer container = mock(AllocContainer.class);
+
+        Map<String, AllocContainer> mockMap = new HashMap<>();
+        mockMap.put("GROUP1", container);
+
+        doReturn(mockMap).when(spyService).getAllecs(anyString());
+        doReturn(false).when(container).hasOnlyAvg();
+        doReturn(true).when(container).hasSamePriceQty(5);
+
+        doNothing().when(spyService).statusProcessing(anyString(), any());
+        doNothing().when(spyService).statusFailure(anyString(), any());
+        doNothing().when(spyService).updateMatchedStatus(any(), any());
+
+        spyService.processByReplayPartialGroups();
+
+        verify(spyService).statusProcessing(eq("GROUP1"), eq(container));
+        verify(spyService, never()).statusFailure(any(), any());
+        verify(spyService).updateMatchedStatus(
+            argThat(status -> " RTS".equals(status.getStatus())),
+            eq(container));
+    }
+
+    @Test
+    public void testProcessByReplayPartialGroups_OnlyAvgFills() {
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+        AllocContainer container = mock(AllocContainer.class);
+
+        Map<String, AllocContainer> mockMap = new HashMap<>();
+        mockMap.put("GROUP2", container);
+
+        doReturn(mockMap).when(spyService).getAllecs(anyString());
+        doReturn(true).when(container).hasOnlyAvg();
+
+        doNothing().when(spyService).statusFailure(anyString(), any());
+
+        spyService.processByReplayPartialGroups();
+
+        verify(spyService).statusFailure(eq("GROUP2"), eq(container));
+        verify(spyService, never()).updateMatchedStatus(any(), any());
+    }
+
+    @Test
+    public void testProcessByReplayPartialGroups_MismatchedFills() {
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+        AllocContainer container = mock(AllocContainer.class);
+
+        Map<String, AllocContainer> mockMap = new HashMap<>();
+        mockMap.put("GROUP3", container);
+
+        doReturn(mockMap).when(spyService).getAllecs(anyString());
+        doReturn(false).when(container).hasOnlyAvg();
+        doReturn(false).when(container).hasSamePriceQty(5);
+
+        doNothing().when(spyService).statusFailure(anyString(), any());
+
+        spyService.processByReplayPartialGroups();
+
+        verify(spyService).statusFailure(eq("GROUP3"), eq(container));
+        verify(spyService, never()).updateMatchedStatus(any(), any());
+    }
+}
+
+
 verify(tmlApsCHFeedUtil).updateMatchedStatus(
     argThat(status -> status.getStatus().contains("NMY") || status.getStatus().contains("MATCHED")),
     any(AllocContainer.class)
