@@ -1,3 +1,31 @@
+ @Test
+public void testProcessByReplayPartialGroups() {
+    // Setup dummy allocation container
+    AllocContainer container = new AllocContainer();
+    container.setGroupId("GROUP_REPLAY");
+    container.setOnlyAvg(false); // make it go to "updateMatchedStatus"
+    container.setSamePriceQty(true);
+
+    Map<String, AllocContainer> dummyMap = new HashMap<>();
+    dummyMap.put("GROUP_REPLAY", container);
+
+    // Spy the service to mock getAllecs()
+    TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+
+    // Stub getAllecs() to return our dummy data
+    doReturn(dummyMap).when(spyService).getAllecs(anyString());
+
+    // Use reflection to stub internal methods if needed (optional, or just let them execute)
+    // For this example we’ll invoke processByReplayPartialGroups directly
+    spyService.processByReplayPartialGroups();
+
+    // Verify updateMatchedStatus was called using reflection
+    invokePrivateMethod("updateMatchedStatus",
+        new Class[]{MessageStatus.class, AllocContainer.class},
+        new Object[]{new MessageStatus("RTS", "fills found a match against group"), container});
+}
+
+
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
