@@ -1,3 +1,8 @@
+verify(tmlApsCHFeedUtil).updateMatchedStatus(
+    argThat(status -> status.getStatus().contains("NMY") || status.getStatus().contains("MATCHED")),
+    any(AllocContainer.class)
+);
+
 
 verify(tmlApsCHFeedUtil).updateMatchedStatus(
     argThat(status -> status.getStatus().contains("NMY")),  // or use any()
