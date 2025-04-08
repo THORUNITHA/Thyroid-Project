@@ -1,3 +1,26 @@
+
+import org.springframework.util.ReflectionUtils;
+
+import java.lang.reflect.Field;
+
+@Test
+public void testInit() {
+    Field namMktsField = ReflectionUtils.findField(TmlOnExchangeApsServiceImpl.class, "namMkts");
+    Field bamlMktBrkrsField = ReflectionUtils.findField(TmlOnExchangeApsServiceImpl.class, "bamlMktBrkrs");
+
+    ReflectionUtils.makeAccessible(namMktsField);
+    ReflectionUtils.makeAccessible(bamlMktBrkrsField);
+
+    List<String> namMkts = (List<String>) ReflectionUtils.getField(namMktsField, service);
+    List<String> bamlMktBrkrs = (List<String>) ReflectionUtils.getField(bamlMktBrkrsField, service);
+
+    Assert.assertEquals(1, namMkts.size());
+    Assert.assertTrue(namMkts.contains("TEST_EXCHANGE"));
+    Assert.assertEquals(1, bamlMktBrkrs.size());
+    Assert.assertTrue(bamlMktBrkrs.contains("BAML_BROKER"));
+}
+
+
 import java.lang.reflect.Field;
 
 private List<String> getPrivateListField(Object obj, String fieldName) throws Exception {
