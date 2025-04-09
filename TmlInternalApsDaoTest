@@ -1,4 +1,159 @@
- @Test
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import java.lang.reflect.Method;
+import java.math.BigDecimal;
+import java.util.*;
+
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
+import org.springframework.util.ReflectionUtils;
+
+import com.baml.tml.tmlaps.model.MessageStatus;
+import com.baml.tml.tmlaps.onExchange.service.impl.TmlOnExchangeApsServiceImpl;
+import com.baml.tml.tmlaps.onExchange.service.impl.util.TmlApsCHFeedUtil;
+import com.baml.tml.tmlbase.trade.model.AllocContainer;
+import com.baml.tml.tmlbase.trade.persistence.dao.QueryDaodbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.TAllocationGenericId;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @Mock
+    private QueryDaodbc tmlQueryDao;
+
+    @Mock
+    private TmlApsCHFeedUtil tmlApsCHFeedUtil;
+
+    @Mock
+    private SqlRowSet namMarketsRowSet;
+
+    @Mock
+    private SqlRowSet bamlBrokersRowSet;
+
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+
+    @Before
+    public void setUp() throws Exception {
+        when(namMarketsRowSet.next()).thenReturn(true).thenReturn(false);
+        when(namMarketsRowSet.getString("ALIAS_C")).thenReturn("TEST_EXCHANGE");
+
+        when(bamlBrokersRowSet.next()).thenReturn(true).thenReturn(false);
+        when(bamlBrokersRowSet.getString("EXCHANGE_BROKER")).thenReturn("BAML_BROKER");
+
+        when(tmlQueryDao.getRowSet(anyString()))
+            .thenReturn(namMarketsRowSet)
+            .thenReturn(bamlBrokersRowSet);
+
+        service.init();
+    }
+
+    @Test
+    public void testInit() {
+        Assert.assertEquals(1, service.namMkts.size());
+        Assert.assertTrue(service.namMkts.contains("TEST_EXCHANGE"));
+        Assert.assertEquals(1, service.bamlMktBrkrs.size());
+        Assert.assertTrue(service.bamlMktBrkrs.contains("BAML_BROKER"));
+    }
+
+    @Test
+    public void testProcessByEachFill_NoAllocations() {
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.emptyList());
+
+        service.processByEachFill();
+
+        verify(tmlApsCHFeedUtil, never()).updateStatus(any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    public void testProcessByEachFill_ValidMatch() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("CLIENT1");
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(BigDecimal.valueOf(100.0));
+        alloc.setQuantityI(10);
+        alloc.setGmiExchCdC("CME");
+        alloc.setExecBrokerC("BAML");
+
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.singletonList(alloc));
+
+        service.processByEachFill();
+
+        verify(tmlApsCHFeedUtil).updateStatus(
+            argThat(status -> "MATCHED".equals(status.getStatus())),
+            anyList(),
+            any(AllocContainer.class),
+            eq(true));
+    }
+
+    @Test
+    public void testProcessBySum_MatchingSum() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("CLIENT2");
+        alloc.setTmlAllocGroupIdC("GROUP2");
+        alloc.setPriceD(BigDecimal.valueOf(200.0));
+        alloc.setQuantityI(20);
+        alloc.setGmiExchCdC("ICE");
+
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any()))
+            .thenReturn(Collections.singletonList(alloc));
+
+        service.processBySum();
+
+        verify(tmlApsCHFeedUtil).updateStatus(
+            argThat(status -> "MATCHED".equals(status.getStatus())),
+            anyList(),
+            any(AllocContainer.class),
+            anyBoolean());
+    }
+
+    @Test
+    public void testProcessByReplayPartialGroups() throws Exception {
+        // Dummy AllocContainer setup
+        AllocContainer container = new AllocContainer();
+        container.setGroupId("REPLAY_GROUP");
+        container.setOnlyAvg(false);
+        container.setSamePriceQty(true);
+
+        Map<String, AllocContainer> dummyMap = new HashMap<>();
+        dummyMap.put("REPLAY_GROUP", container);
+
+        // Spy the service to mock getAllecs
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+        doReturn(dummyMap).when(spyService).getAllecs(anyString());
+
+        // Run the method
+        spyService.processByReplayPartialGroups();
+
+        // Use reflection to invoke private updateMatchedStatus
+        invokePrivateMethod(spyService, "updateMatchedStatus",
+            new Class[]{MessageStatus.class, AllocContainer.class},
+            new Object[]{new MessageStatus("RTS", "fills found a match against group"), container});
+    }
+
+    // Reflection utility to invoke private or package-private methods
+    private void invokePrivateMethod(Object instance, String methodName, Class<?>[] paramTypes, Object[] args) {
+        Method method = ReflectionUtils.findMethod(instance.getClass(), methodName, paramTypes);
+        if (method != null) {
+            method.setAccessible(true);
+            ReflectionUtils.invokeMethod(method, instance, args);
+        } else {
+            throw new RuntimeException("Method not found: " + methodName);
+        }
+    }
+}
+
+
+
+@Test
 public void testProcessByReplayPartialGroups() {
     // Setup dummy allocation container
     AllocContainer container = new AllocContainer();
