@@ -1,4 +1,29 @@
- SELECT DISTINCT tr.trader_id_c
+SELECT *
+FROM tml.t_trades_repository t
+WHERE TRUNC(t.trade_date_dt) = TRUNC(SYSDATE - 1)
+  AND t.trader_id_c IN (
+    SELECT DISTINCT tr.trader_id_c
+    FROM tml.t_trades_repository tr
+    WHERE tr.gmi_recno_i IN (
+      SELECT DISTINCT ag.mi_recno_1
+      FROM tml.t_allocation_generic ag
+      WHERE ag.tml_alloc_group_id_c IN (
+        SELECT vs.group_id
+        FROM tml.v_raps_status vs
+        WHERE TRUNC(vs.trade_date) = TRUNC(SYSDATE - 1)
+          AND vs.raps_comment LIKE '&NVAP:%'
+      )
+    )
+  )
+  AND t.trader_id_c NOT IN (
+    SELECT SUBSTR(ap.futol_message_c, 355, 15)
+    FROM tml.t_gmifutql_message_ap ap
+    WHERE TRUNC(ap.trade_date_dt) = TRUNC(SYSDATE - 1)
+  );
+
+
+
+SELECT DISTINCT tr.trader_id_c
 FROM tml.t_trades_repository tr
 WHERE TRUNC(tr.trade_date_dt) = TRUNC(SYSDATE - 1)
   AND tr.id_i IN (
