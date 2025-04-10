@@ -1,0 +1,14 @@
+ SELECT DISTINCT tr.trader_id_c
+FROM tml.t_trades_repository tr
+WHERE TRUNC(tr.trade_date_dt) = TRUNC(SYSDATE - 1)
+  AND tr.id_i IN (
+    SELECT ag.tl_alloc_unique_id_e
+    FROM tml.t_allocation_generic ag
+    WHERE ag.allocation_status_c LIKE 'SNVAP%'
+      AND ag.aps_type = 'FILL'
+  )
+  AND tr.trader_id_c NOT IN (
+    SELECT SUBSTR(ap.futol_message_c, 355, 15)
+    FROM tml.t_gmifutql_message_ap ap
+    WHERE TRUNC(ap.trade_date_dt) = TRUNC(SYSDATE - 1)
+  );
