@@ -1,0 +1,125 @@
+  package com.baml.tml.tmlaps.service.impl;
+
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import javax.mail.Session;
+import javax.mail.internet.MimeMessage;
+import javax.mail.util.ByteArrayDataSource;
+
+import com.baml.tml.tmlaps.dao.TmlInternalApsDao;
+import com.baml.tml.tmlbase.trade.util.AllocationType;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.mail.MailException;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlApsEmailServiceImplTest {
+
+    @Mock
+    private JavaMailSender mailSender;
+
+    @Mock
+    private SimpleMailMessage simpleMailMessage;
+
+    @Mock
+    private TmlInternalApsDao tmlInternalApsDao;
+
+    @InjectMocks
+    private TmlApsEmailServiceImpl service;
+
+    @Before
+    public void setUp() {
+        ReflectionTestUtils.setField(service, "emailTo", "to1@example.com;to2@example.com");
+        service.init(); // Manually trigger @PostConstruct
+        when(simpleMailMessage.getFrom()).thenReturn("from@example.com");
+    }
+
+    @Test
+    public void sendMail_WithMatchedAndUnmatched_SendsTwoEmails() throws Exception {
+        // Setup mock data
+        Map<String, Object> mockMap = new HashMap<>();
+        mockMap.put("ALLOC_UNMATCHED_REPORT", "unmatchedContent");
+        mockMap.put("UNMATCHED_GROUPS", new HashSet<>(Collections.singletonList("group1")));
+        mockMap.put("INVALID_GROUPS", new HashSet<>(Collections.singletonList("invalid1")));
+        mockMap.put("UNMATCHED_NUMBER_FILL_LINES", 5);
+        mockMap.put("ALLOC_MATCHED_REPORT", "matchedContent");
+        mockMap.put("MATCHED_GROUPS", new HashSet<>(Collections.singletonList("group2")));
+        mockMap.put("MATCHED_NUMBER_FILL_LINES", 3);
+
+        when(tmlInternalApsDao.csvReport(any(AllocationType.class))).thenReturn(mockMap);
+        when(mailSender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
+
+        // Execute method
+        Map<String, Object> result = service.sendMail("body", AllocationType.INTERNALAPS);
+
+        // Verify interactions
+        verify(tmlInternalApsDao).csvReport(AllocationType.INTERNALAPS);
+        assertSame(mockMap, result);
+
+        // Capture sent emails
+        ArgumentCaptor<MimeMessage> messageCaptor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender, times(2)).send(messageCaptor.capture());
+
+        // Verify first email (unmatched)
+        MimeMessage unmatchedMessage = messageCaptor.getAllValues().get(0);
+        assertEquals("The Internal APS- unmatched report, unmatched groups:1, inavlid groups#:1, fills#:5", 
+                     unmatchedMessage.getSubject());
+        assertArrayEquals(new String[]{"to1@example.com", "to2@example.com"}, 
+                         unmatchedMessage.getAllRecipients());
+        assertTrue(unmatchedMessage.getContent() instanceof javax.mail.Multipart);
+
+        // Verify second email (matched)
+        MimeMessage matchedMessage = messageCaptor.getAllValues().get(1);
+        assertEquals("The Internal APS matched report, matched groups#:1, fills#:3", 
+                     matchedMessage.getSubject());
+    }
+
+    @Test
+    public void sendMail_UnmatchedContentIsNull_OnlyMatchedEmailSent() throws Exception {
+        Map<String, Object> mockMap = new HashMap<>();
+        mockMap.put("ALLOC_UNMATCHED_REPORT", null);
+        mockMap.put("ALLOC_MATCHED_REPORT", "matchedContent");
+        mockMap.put("MATCHED_GROUPS", new HashSet<>());
+        mockMap.put("MATCHED_NUMBER_FILL_LINES", 0);
+        mockMap.put("UNMATCHED_GROUPS", new HashSet<>());
+        mockMap.put("INVALID_GROUPS", new HashSet<>());
+        mockMap.put("UNMATCHED_NUMBER_FILL_LINES", 0);
+
+        when(tmlInternalApsDao.csvReport(any())).thenReturn(mockMap);
+        when(mailSender.createMimeMessage()).thenAnswer(inv -> new MimeMessage((Session) null));
+
+        service.sendMail("body", AllocationType.ALLOCATION_PROCESS);
+
+        verify(mailSender, times(1)).send(any(MimeMessage.class));
+    }
+
+    @Test
+    public void sendMail_ExceptionDuringSend_LogsError() {
+        Map<String, Object> mockMap = new HashMap<>();
+        mockMap.put("ALLOC_UNMATCHED_REPORT", "content");
+        mockMap.put("UNMATCHED_GROUPS", new HashSet<>());
+        mockMap.put("INVALID_GROUPS", new HashSet<>());
+        mockMap.put("UNMATCHED_NUMBER_FILL_LINES", 0);
+
+        when(tmlInternalApsDao.csvReport(any())).thenReturn(mockMap);
+        doThrow(new MailException("Simulated error") {}).when(mailSender).send(any(MimeMessage.class));
+
+        service.sendMail("body", AllocationType.INTERNALAPS);
+
+        verify(mailSender).send(any(MimeMessage.class));
+    }
+}
