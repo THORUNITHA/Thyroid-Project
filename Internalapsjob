@@ -1,0 +1,74 @@
+  import com.baml.tml.tmlaps.service.*;
+import com.baml.tml.tmlaps.service.impl.util.TmlAllocShutdownUtil;
+import com.baml.tml.tmlaps.service.impl.util.TmlJobs;
+import com.baml.tml.tmlaps.trade.util.AllocationType;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+
+import static org.mockito.Mockito.*;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlInternalApsJobsTest {
+
+    @InjectMocks
+    private TmlInternalApsJobs tmlInternalApsJobs;
+
+    @Mock
+    private TmlInternalApsService tmlInternalApsService;
+
+    @Mock
+    private TmlApsEmailService tmlApsEmailService;
+
+    @Mock
+    private TmlAllocShutdownUtil tmlAllocShutdownUtil;
+
+    @Before
+    public void setup() {
+        // MockitoAnnotations.initMocks(this); // Not needed with @RunWith(MockitoJUnitRunner.class)
+    }
+
+    @Test
+    public void testCallProcessEachFillJob() {
+        tmlInternalApsJobs.callProcessEachFillJob();
+        verify(tmlInternalApsService).processByEachFill();
+    }
+
+    @Test
+    public void testCallProcessBySumJob() {
+        tmlInternalApsJobs.callProcessBySumJob();
+        verify(tmlInternalApsService).processBySumAllocations();
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceByBrokerJob() {
+        tmlInternalApsJobs.callProcessBySumAvgPrceByBrokerJob();
+        verify(tmlInternalApsService).processSumAllocationsAvgPrceByBroker();
+    }
+
+    @Test
+    public void testCallSendEmailReportJob() {
+        tmlInternalApsJobs.callSendEmailReportJob();
+        verify(tmlApsEmailService).sendMail(eq("Internal APS report"), eq(AllocationType.INTERNALAPS));
+    }
+
+    @Test
+    public void testCheckForShutdown() {
+        tmlInternalApsJobs.checkForShutdown();
+        verify(tmlInternalApsService).printStatus();
+    }
+
+    @Test
+    public void testCallProcessReplayGroupJob() {
+        tmlInternalApsJobs.callProcessReplayGroupJob();
+        verify(tmlInternalApsService).processReplayGroup();
+    }
+
+    @Test
+    public void testCallRetrySendSubaccMessageToGmi() {
+        tmlInternalApsJobs.callRetrySendSubaccMessageToGmi();
+        verify(tmlInternalApsService).retrySendSubaccMsgListToGMI();
+    }
+}
