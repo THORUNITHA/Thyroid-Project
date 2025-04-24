@@ -1,0 +1,82 @@
+ import com.baml.tml.tmlaps.jobs.TmlOnExchangeApsJobs;
+import com.baml.tml.tmlaps.onExchange.service.TmlApsExchangeConnectorService;
+import com.baml.tml.tmlaps.onExchange.service.TmlOnExchangeApsService;
+import com.baml.tml.tmlaps.service.impl.util.TmlAllocShutdownUtil;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnitRunner;
+
+import javax.jms.JMSException;
+import javax.xml.bind.JAXBException;
+
+import static org.mockito.Mockito.*;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsJobsTest {
+
+    @Mock
+    private TmlOnExchangeApsService apsService;
+
+    @Mock
+    private TmlApsExchangeConnectorService connectorService;
+
+    @Mock
+    private TmlAllocShutdownUtil shutdownUtil;
+
+    @InjectMocks
+    private TmlOnExchangeApsJobs apsJobs;
+
+    @Before
+    public void setUp() {
+        MockitoAnnotations.initMocks(this);
+    }
+
+    @Test
+    public void testCallProcessByEachFillJob() {
+        apsJobs.callProcessByEachFillJob();
+        verify(apsService).processByEachFill();
+    }
+
+    @Test
+    public void testCallProcessBySumJob() {
+        apsJobs.callProcessBySumJob();
+        verify(apsService).processBySum();
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceJob() {
+        apsJobs.callProcessBySumAvgPriceJob();
+        verify(apsService).processSumByAvgPrice();
+    }
+
+    @Test
+    public void testCallProcessByReplayFillJob() {
+        apsJobs.callProcessByReplayFillJob();
+        verify(apsService).processByReplayPartialGroups();
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceByBrokerJob() {
+        apsJobs.callProcessBySumAvgPrceByBrokerJob();
+        verify(apsService).processSumByBroker();
+    }
+
+    @Test
+    public void testCheckForShutdown() {
+        apsJobs.checkForShutdown();
+        verify(shutdownUtil).shutdownIfRequests(any());
+        verify(apsService).printStatus();
+    }
+
+    @Test
+    public void testCheckForMatchedAps() throws JAXBException, JMSException {
+        apsJobs.checkForMatchedAps();
+        verify(shutdownUtil).shutdownIfRequests(any());
+        verify(connectorService).processMatchedMsgs();
+        verify(connectorService).processToCompleteApsGroup();
+    }
+}
