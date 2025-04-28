@@ -1,0 +1,67 @@
+ import static org.mockito.Mockito.*;
+
+import com.baml.tml.tmlaps.jobs.TmlAllocationJobs;
+import com.baml.tml.tmlaps.service.AllocationService;
+import com.baml.tml.tmlaps.service.TmlApsEmailService;
+import com.baml.tml.tmlaps.util.TmlAllocShutdownUtil;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+public class TmlAllocationJobsTest {
+
+    @Mock
+    private AllocationService allocationService;
+
+    @Mock
+    private TmlApsEmailService tmlApsEmailService;
+
+    @Mock
+    private TmlAllocShutdownUtil tmlAllocShutdownUtil;
+
+    @InjectMocks
+    private TmlAllocationJobs tmlAllocationJobs;
+
+    @Before
+    public void setUp() {
+        MockitoAnnotations.initMocks(this);
+    }
+
+    @Test
+    public void testCallProcessEachFillJob() {
+        tmlAllocationJobs.callProcessEachFillJob();
+        // Add verifications as needed
+    }
+
+    @Test
+    public void testCallProcessBySumJob() {
+        tmlAllocationJobs.callProcessBySumJob();
+        // Add verifications as needed
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceByBrokerJob() {
+        tmlAllocationJobs.callProcessBySumAvgPriceByBrokerJob();
+        // Add verifications as needed
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceByBrokerJobWithNoPrice() {
+        tmlAllocationJobs.callProcessBySumAvgPriceByBrokerJobWithNoPrice();
+        // Add verifications as needed
+    }
+
+    @Test
+    public void testCallSendEmailReportJob() {
+        tmlAllocationJobs.callSendEmailReportJob();
+        // Add verifications as needed
+    }
+
+    @Test
+    public void testCallCheckForShutdownJob() {
+        tmlAllocationJobs.callCheckForShutdownJob();
+        // Add verifications as needed
+    }
+}
