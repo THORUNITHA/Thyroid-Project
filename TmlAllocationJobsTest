@@ -1,4 +1,94 @@
- import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.*;
+
+import com.baml.tml.tmlaps.jobs.TmlAllocationJobs;
+import com.baml.tml.tmlaps.service.AllocationService;
+import com.baml.tml.tmlaps.service.TmlApsEmailService;
+import com.baml.tml.tmlaps.util.TmlAllocShutdownUtil;
+import com.baml.tml.tmlaps.trade.util.AllocationType;
+import com.baml.tml.tmlaps.jobs.TmlAllocationJobs.jobs;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+public class TmlAllocationJobsTest {
+
+    @Mock
+    private AllocationService allocationService;
+
+    @Mock
+    private TmlApsEmailService tmlApsEmailService;
+
+    @Mock
+    private TmlAllocShutdownUtil tmlAllocShutdownUtil;
+
+    @InjectMocks
+    private TmlAllocationJobs tmlAllocationJobs;
+
+    @Before
+    public void setUp() {
+        MockitoAnnotations.initMocks(this);
+    }
+
+    @Test
+    public void testCallProcessEachFillJob() {
+        tmlAllocationJobs.callProcessEachFillJob();
+
+        // Verify that allocationService.processByEachAlloc() is called
+        verify(allocationService, atLeastOnce()).processByEachAlloc();
+    }
+
+    @Test
+    public void testCallProcessBySumJob() {
+        tmlAllocationJobs.callProcessBySumJob();
+
+        // Verify that allocationService.processBySumAlloc() is called
+        verify(allocationService, atLeastOnce()).processBySumAlloc();
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceByBrokerJob() {
+        tmlAllocationJobs.callProcessBySumAvgPriceByBrokerJob();
+
+        // Verify that allocationService.processBySumAllocByBroker() is called
+        verify(allocationService, atLeastOnce()).processBySumAllocByBroker(jobs.SUM_FILL_BROKER);
+    }
+
+    @Test
+    public void testCallProcessBySumAvgPriceByBrokerJobWithNoPrice() {
+        tmlAllocationJobs.callProcessBySumAvgPriceByBrokerJobWithNoPrice();
+
+        // Verify that allocationService.processBySumAllocByBroker() is called
+        verify(allocationService, atLeastOnce()).processBySumAllocByBroker(jobs.SUM_FILL_BROKER_NO_PRICE);
+    }
+
+    @Test
+    public void testCallSendEmailReportJob() {
+        tmlAllocationJobs.callSendEmailReportJob();
+
+        // Verify that tmlApsEmailService.sendMail() is called
+        verify(tmlApsEmailService, atLeastOnce()).sendMail("Allocation Process report", AllocationType.ALLOCATION_PROCESS);
+    }
+
+    @Test
+    public void testCallCheckForShutdownJob() {
+        tmlAllocationJobs.callCheckForShutdownJob();
+
+        // Verify that allocationService.printStatus() is called
+        verify(allocationService, atLeastOnce()).printStatus();
+    }
+}
+
+
+
+
+
+
+
+
+import static org.mockito.Mockito.*;
 
 import com.baml.tml.tmlaps.jobs.TmlAllocationJobs;
 import com.baml.tml.tmlaps.service.AllocationService;
