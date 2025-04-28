@@ -1,0 +1,103 @@
+  import static org.mockito.Mockito.*;
+import static org.junit.Assert.*;
+
+import java.util.*;
+import java.math.BigDecimal;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.util.StringUtil;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    @Before
+    public void setUp() {
+        allocationService = new AllocationServiceImpl();
+        MockitoAnnotations.initMocks(this);
+
+        allocationService.tmlQueryDao = tmlQueryDao;
+        allocationService.gmiQueryDao = gmiQueryDao;
+        allocationService.allocRepository = allocRepository;
+        allocationService.gmiSchema = "TEST_SCHEMA";
+    }
+
+    @Test
+    public void testProcessByBatchAlloc() throws Exception {
+        List<TAllocationGenericId> dummyList = Collections.singletonList(mock(TAllocationGenericId.class));
+        when(tmlQueryDao.queryForRowMapper(anyString(), any(), any())).thenReturn(dummyList);
+
+        allocationService.processByBachAlloc();
+
+        verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(anyString(), any(), any());
+    }
+
+    @Test
+    public void testProcessBySumAlloc() throws Exception {
+        List<TAllocationGenericId> dummyList = Collections.singletonList(mock(TAllocationGenericId.class));
+        when(tmlQueryDao.queryForRowMapper(anyString(), any(), any())).thenReturn(dummyList);
+
+        allocationService.processBySumAlloc();
+
+        verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(anyString(), any(), any());
+    }
+
+    @Test
+    public void testProcessBySumAllocByBroker_withEmptyAllocations() throws Exception {
+        when(tmlQueryDao.queryForRowMapper(anyString(), any(), any())).thenReturn(Collections.emptyList());
+
+        allocationService.processBySumAllocByBroker(ImlAllocationJobs.jobs.SUM_FILL_BROKER);
+
+        verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(anyString(), any(), any());
+    }
+
+    @Test
+    public void testGetGmiLookUpAc() {
+        TAllocationGenericId allocation = mock(TAllocationGenericId.class);
+        when(allocation.getAcctMatchOnC()).thenReturn("M");
+        when(allocation.getMatchAcctC()).thenReturn("MATCH123");
+
+        List<TAllocationGenericId> allocations = Arrays.asList(allocation);
+        List<String> result = allocationService.getGmiLookUpAc(allocations);
+
+        assertEquals(1, result.size());
+        assertTrue(result.contains("MATCH123"));
+    }
+
+    @Test
+    public void testAddFtype_WhenCMEGroup() {
+        TAllocationGenericId alloc = mock(TAllocationGenericId.class);
+        when(alloc.getGmiExchCdC()).thenReturn("CME");
+
+        String result = allocationService.addFtype(alloc, "first", "withFtype");
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testAddFtpric_WhenPriceNotMatched() {
+        TAllocationGenericId alloc = mock(TAllocationGenericId.class);
+        when(alloc.getClientC()).thenReturn("MOORECAP");
+        when(alloc.getIsGmiPriceMatch()).thenReturn("N");
+
+        allocationService.currentJob = ImlAllocationJobs.jobs.SUM_FILL_BROKER_NO_PRICE;
+
+        String result = allocationService.addFtpric(alloc, "withFtpric");
+        assertNotNull(result);
+    }
+}
