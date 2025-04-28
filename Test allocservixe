@@ -1,0 +1,14 @@
+  @Before
+public void setup() throws Exception {
+    allocationService = new AllocationService();
+
+    injectMock(allocationService, "tmlQueryDao", mock(TmlQueryDao.class));
+    injectMock(allocationService, "gmiQueryDao", mock(GmiQueryDao.class));
+    // inject other DAOs
+}
+
+private void injectMock(Object target, String fieldName, Object mockObject) throws Exception {
+    Field field = target.getClass().getDeclaredField(fieldName);
+    field.setAccessible(true);
+    field.set(target, mockObject);
+}
