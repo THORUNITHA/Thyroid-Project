@@ -1,4 +1,33 @@
-  import static org.mockito.Mockito.*;
+@Test
+public void testProcessBySumAllocByBroker() {
+    // Setup test data
+    List<TAllocationGenericId> mockAllocations = new ArrayList<>();
+    TAllocationGenericId alloc = new TAllocationGenericId();
+    alloc.setTmlAllocGroupIdC("GROUP1");
+    alloc.setPriceD(new BigDecimal("100.50"));
+    alloc.setSilentBrokerC("BROKER1");
+    mockAllocations.add(alloc);
+
+    // Mock the queryForRowMapper call with proper argument types
+    when(tmlQueryDao.queryForRowMapper(
+        eq(BROKER_SUM_BY_ALLOC_SQL),  // or anyString() if you prefer
+        isNull(Object[].class),
+        any(RowMapper.class)))  // Changed from TAllocationProcessMapper.class
+        .thenReturn(mockAllocations);
+
+    // Execute
+    allocationService.processBySumAllocByBroker(TmlAllocationJobs.jobs.SUM_FILL_BROKER);
+
+    // Verify
+    verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(
+        eq(BROKER_SUM_BY_ALLOC_SQL),  // or anyString()
+        isNull(Object[].class),
+        any(RowMapper.class));
+    verify(log, atLeastOnce()).info(anyString());
+}
+
+
+import static org.mockito.Mockito.*;
 import static org.junit.Assert.*;
 
 import java.util.*;
