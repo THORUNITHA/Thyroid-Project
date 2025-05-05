@@ -1,4 +1,153 @@
-  
+   import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.TAllocationProcessMapper;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    private static final String EACH_ALLOC_SQL = 
+        "SELECT * FROM T_GMI_ALLOC_PROCESS WHERE 1=1 " +
+        "AND (TRADE_DATE_DT = trunc(SYSDATE-0) " +
+        "OR (TRADE_DATE_DT < trunc(SYSDATE-0) " + 
+        "AND trunc(LAST_UPDATE_TS) = trunc(sysdate-0))) " +
+        "AND DOWNSTREAM_STATUS_SW in ('RTS', 'NMY') " +
+        "order by id_i";
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    private String gmiSchema = "test_schema";
+
+    @Before
+    public void setUp() throws Exception {
+        MockitoAnnotations.initMocks(this);
+        
+        setPrivateField(allocationService, "gmiSchema", gmiSchema);
+        setPrivateField(allocationService, "log", mock(Logger.class));
+        setPrivateField(allocationService, "brokerEnrichmentMap", new ConcurrentHashMap<>());
+        
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+    }
+
+    @Test
+    public void testProcessByEachAlloc() {
+        // 1. Create test allocation with all required fields
+        TAllocationGenericId alloc = createCompleteTestAllocation();
+        Map<String, AllocContainer> mockMap = new HashMap<>();
+        AllocContainer container = new AllocContainer();
+        container.addAsFillAndAvg(alloc);
+        mockMap.put("GROUP1", container);
+        
+        // 2. Mock GMI response
+        List<Gmitrnfl> mockTrnflFills = new ArrayList<>();
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(alloc.getQuantityI());
+        fill.setFtpric(alloc.getPriceD());
+        fill.setFexch(alloc.getGmiExchCdC());
+        fill.setFfc(alloc.getGmiInstTypeC());
+        mockTrnflFills.add(fill);
+        
+        when(gmiQueryDao.queryForRowMapper(anyString(), any(Map.class), any()))
+            .thenReturn(mockTrnflFills);
+        
+        // 3. Execute via reflection since processAllocs is private
+        invokeProcessAllocs(TmlInternalApsJobs.jobs.EACH_FILL, mockMap);
+        
+        // 4. Verify
+        verify(gmiQueryDao).queryForRowMapper(anyString(), any(Map.class), any());
+    }
+
+    @Test
+    public void testProcessByEachAllocWithNullAccounts() {
+        // 1. Create test allocation with null account fields
+        TAllocationGenericId alloc = createCompleteTestAllocation();
+        alloc.setAcctMatchOnC("M"); // Requires matchAcctC
+        alloc.setMatchAcctC(null); // Explicitly null
+        
+        Map<String, AllocContainer> mockMap = new HashMap<>();
+        AllocContainer container = new AllocContainer();
+        container.addAsFillAndAvg(alloc);
+        mockMap.put("GROUP1", container);
+        
+        // 2. Should handle null accounts gracefully
+        invokeProcessAllocs(TmlInternalApsJobs.jobs.EACH_FILL, mockMap);
+        
+        // 3. Verify warning was logged
+        verify(allocationService.log).warn(contains("fills not found"));
+    }
+
+    private TAllocationGenericId createCompleteTestAllocation() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        // Required fields
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setQuantityI(100);
+        
+        // Account fields
+        alloc.setAcctMatchOnC("C"); // Default to clearing account
+        alloc.setClearingAcctC("CLEARING_ACCT");
+        alloc.setMatchAcctC("MATCH_ACCT");
+        alloc.setExecutionAcctC("EXEC_ACCT");
+        
+        // Other required fields
+        alloc.setTradeDateD(new Date());
+        alloc.setGmiExchCdC("TEST_EXCH");
+        alloc.setGmiInstTypeC("FUT");
+        alloc.setExecBrkMneC("EXEC_BRK");
+        alloc.setBs("B");
+        alloc.setSilentBrokerC("BROKER1");
+        
+        return alloc;
+    }
+
+    private void invokeProcessAllocs(TmlInternalApsJobs.jobs job, Map<String, AllocContainer> map) {
+        try {
+            Method method = AllocationServiceImpl.class.getDeclaredMethod(
+                "processAllocs", 
+                TmlInternalApsJobs.jobs.class, Map.class);
+            method.setAccessible(true);
+            method.invoke(allocationService, job, map);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to invoke processAllocs", e);
+        }
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+}
+
+
+
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
