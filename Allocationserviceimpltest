@@ -1,3 +1,188 @@
+
+  import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.TAllocationProcessMapper;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    private static final String SUM_BY_ALLOC_SQL = "SELECT * FROM allocations_sum";
+    private static final SimpleDateFormat tradeDtFormat = new SimpleDateFormat("yyyyMMdd");
+    private static final SimpleDateFormat matDtFormat = new SimpleDateFormat("yyyyMMdd");
+    private static final SimpleDateFormat matDayFormat = new SimpleDateFormat("dd");
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    @Before
+    public void setUp() throws Exception {
+        MockitoAnnotations.initMocks(this);
+        
+        setPrivateField(allocationService, "gmiSchema", "test_schema");
+        setPrivateField(allocationService, "log", mock(Logger.class));
+        setPrivateField(allocationService, "brokerEnrichmentMap", new ConcurrentHashMap<>());
+        
+        // Initialize formats
+        setPrivateField(allocationService, "tradeDtFormat", tradeDtFormat);
+        setPrivateField(allocationService, "matDtFormat", matDtFormat);
+        setPrivateField(allocationService, "matDayFormat", matDayFormat);
+        
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+    }
+
+    @Test
+    public void testCheckIfFillsSumMatches() throws Exception {
+        // 1. Create test data with all required fields
+        TAllocationGenericId alloc = createValidTestAllocation();
+        alloc.setGmiExchCdC("TEST_EXCH"); // Set exchange code
+        List<TAllocationGenericId> allocations = Collections.singletonList(alloc);
+        
+        // 2. Create matching GMI fills
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(alloc.getQuantityI());
+        fill.setFtpric(alloc.getPriceD());
+        fill.setFexch(alloc.getGmiExchCdC());
+        fill.setFfc(alloc.getGmiInstTypeC());
+        trnflFills.add(fill);
+        
+        List<Gmiidsf1> idsf1Fills = new ArrayList<>();
+        
+        // 3. Get account list
+        List<String> accounts = allocationService.getGmiLookUpAc(allocations);
+        
+        // 4. Mock GMI query response
+        when(gmiQueryDao.queryForRowMapper(anyString(), any(Map.class), any()))
+            .thenReturn(trnflFills);
+        
+        // 5. Invoke via reflection
+        Method method = AllocationServiceImpl.class.getDeclaredMethod(
+            "checkIfFillsSumMatches", 
+            List.class, List.class, List.class, List.class);
+        method.setAccessible(true);
+        
+        boolean result = (boolean) method.invoke(
+            allocationService, 
+            allocations, trnflFills, idsf1Fills, accounts);
+        
+        // 6. Verify
+        assertTrue("Fills should match allocations", result);
+    }
+
+    @Test
+    public void testCheckIfFillsSumMatchesWithNullExchange() throws Exception {
+        // 1. Create test data with null exchange code
+        TAllocationGenericId alloc = createValidTestAllocation();
+        alloc.setGmiExchCdC(null); // Null exchange code
+        List<TAllocationGenericId> allocations = Collections.singletonList(alloc);
+        
+        // 2. Should handle null exchange code gracefully
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        List<Gmiidsf1> idsf1Fills = new ArrayList<>();
+        List<String> accounts = allocationService.getGmiLookUpAc(allocations);
+        
+        // 3. Invoke via reflection
+        Method method = AllocationServiceImpl.class.getDeclaredMethod(
+            "checkIfFillsSumMatches", 
+            List.class, List.class, List.class, List.class);
+        method.setAccessible(true);
+        
+        boolean result = (boolean) method.invoke(
+            allocationService, 
+            allocations, trnflFills, idsf1Fills, accounts);
+        
+        // 4. Verify
+        assertFalse("Should return false with null exchange code", result);
+    }
+
+    @Test
+    public void testProcessBySumAllocWithExchangeCheck() {
+        // 1. Create test data with exchange code
+        TAllocationGenericId alloc = createValidTestAllocation();
+        alloc.setGmiExchCdC("TEST_EXCH");
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(alloc);
+        
+        // 2. Mock DAO responses
+        when(tmlQueryDao.queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // 3. Mock GMI response with matching exchange code
+        List<Gmitrnfl> mockTrnflFills = new ArrayList<>();
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(alloc.getQuantityI());
+        fill.setFtpric(alloc.getPriceD());
+        fill.setFexch(alloc.getGmiExchCdC());
+        mockTrnflFills.add(fill);
+        
+        when(gmiQueryDao.queryForRowMapper(anyString(), any(Map.class), any()))
+            .thenReturn(mockTrnflFills);
+        
+        // 4. Execute
+        allocationService.processBySumAlloc();
+        
+        // 5. Verify
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+    }
+
+    private TAllocationGenericId createValidTestAllocation() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setQuantityI(100);
+        alloc.setAcctMatchOnC("C");
+        alloc.setClearingAcctC("CLEARING_ACCT");
+        alloc.setTradeDateD(new Date());
+        alloc.setMaturityDateD(new Date());
+        alloc.setSilentBrokerC("BROKER1");
+        alloc.setGmiExchCdC("TEST_EXCH");
+        alloc.setGmiInstTypeC("FUT");
+        alloc.setExecBrkMneC("EXEC_BRK");
+        alloc.setBs("B");
+        return alloc;
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+}
+
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
