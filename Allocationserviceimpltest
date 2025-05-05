@@ -1,3 +1,168 @@
+   import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.TAllocationProcessMapper;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    private static final String SUM_BY_ALLOC_SQL = "SELECT * FROM allocations_sum";
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    @Before
+    public void setUp() throws Exception {
+        MockitoAnnotations.initMocks(this);
+        
+        setPrivateField(allocationService, "gmiSchema", "test_schema");
+        setPrivateField(allocationService, "log", mock(Logger.class));
+        setPrivateField(allocationService, "brokerEnrichmentMap", new ConcurrentHashMap<>());
+        
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+    }
+
+    @Test
+    public void testProcessBySumAlloc() {
+        // 1. Create test data with all required fields
+        TAllocationGenericId alloc = createValidTestAllocation();
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(alloc);
+        
+        // 2. Mock DAO responses
+        when(tmlQueryDao.queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // 3. Mock GMI check to return matching fills
+        List<Gmitrnfl> mockTrnflFills = new ArrayList<>();
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(alloc.getQuantityI());
+        fill.setFtpric(alloc.getPriceD());
+        mockTrnflFills.add(fill);
+        
+        when(gmiQueryDao.queryForRowMapper(anyString(), any(Object[].class), any()))
+            .thenReturn(mockTrnflFills);
+        
+        // 4. Execute
+        allocationService.processBySumAlloc();
+        
+        // 5. Verify
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+        
+        verify(gmiQueryDao, atLeastOnce()).queryForRowMapper(
+            anyString(), any(Object[].class), any());
+    }
+
+    @Test
+    public void testProcessBySumAllocWithNullFills() {
+        // 1. Create valid test allocation
+        TAllocationGenericId alloc = createValidTestAllocation();
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(alloc);
+        
+        // 2. Mock DAO to return our test allocation
+        when(tmlQueryDao.queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // 3. Mock GMI to return empty list (no matching fills)
+        when(gmiQueryDao.queryForRowMapper(anyString(), any(Object[].class), any()))
+            .thenReturn(Collections.emptyList());
+        
+        // 4. Execute - should handle null fills gracefully
+        allocationService.processBySumAlloc();
+        
+        // 5. Verify
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+    }
+
+    @Test
+    public void testCheckIfFillsSumMatches() throws Exception {
+        // 1. Create test data
+        TAllocationGenericId alloc = createValidTestAllocation();
+        List<TAllocationGenericId> allocations = Collections.singletonList(alloc);
+        
+        // 2. Create matching GMI fills
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(alloc.getQuantityI());
+        fill.setFtpric(alloc.getPriceD());
+        trnflFills.add(fill);
+        
+        List<Gmiidsf1> idsf1Fills = new ArrayList<>();
+        
+        // 3. Get account list
+        List<String> accounts = allocationService.getGmiLookUpAc(allocations);
+        
+        // 4. Invoke directly via reflection
+        Method method = AllocationServiceImpl.class.getDeclaredMethod(
+            "checkIfFillsSumMatches", 
+            List.class, List.class, List.class, List.class);
+        method.setAccessible(true);
+        
+        boolean result = (boolean) method.invoke(
+            allocationService, 
+            allocations, trnflFills, idsf1Fills, accounts);
+        
+        // 5. Verify
+        assertTrue("Fills should match allocations", result);
+    }
+
+    private TAllocationGenericId createValidTestAllocation() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setQuantityI(100);
+        alloc.setAcctMatchOnC("C");
+        alloc.setClearingAcctC("CLEARING_ACCT");
+        alloc.setTradeDateD(new Date());
+        alloc.setSilentBrokerC("BROKER1");
+        return alloc;
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+}
+
+
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
