@@ -15,6 +15,185 @@ import org.junit.runner.RunWith;
 import org.mockito.*;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    // EXACT SQL query from your production code
+    private static final String EACH_ALLOC_SQL = 
+        "SELECT * FROM T_GMI_ALLOC_PROCESS WHERE 1=1 " +
+        "AND (TRADE_DATE_DT = trunc(SYSDATE-0) " +
+        "OR (TRADE_DATE_DT < trunc(SYSDATE-0) " + 
+        "AND trunc(LAST_UPDATE_TS) = trunc(sysdate-0)) " +
+        "AND DOWNSTREAM_STATUS_SW in ('RTS', 'NMY') " +
+        "order by id_i";
+
+    private static final String SUM_BY_ALLOC_SQL = "SELECT * FROM allocations_sum";
+    private static final String BROKER_SUM_BY_ALLOC_SQL = "SELECT * FROM broker_allocations_sum";
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    private String gmiSchema = "test_schema";
+
+    @Before
+    public void setUp() throws Exception {
+        MockitoAnnotations.initMocks(this);
+        
+        // Set private fields using reflection
+        setPrivateField(allocationService, "gmiSchema", gmiSchema);
+        setPrivateField(allocationService, "log", mock(Logger.class));
+        setPrivateField(allocationService, "brokerEnrichmentMap", new ConcurrentHashMap<>());
+        
+        // Mock DAO responses
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    @Test
+    public void testProcessByEachAlloc() {
+        // Given
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(
+            createTestAllocation("GROUP1", "100.50"));
+        
+        // EXACT mock setup matching production call
+        when(tmlQueryDao.queryForRowMapper(
+            eq(EACH_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // When
+        allocationService.processByEachAlloc();
+        
+        // Then
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(EACH_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+    }
+
+    @Test
+    public void testProcessBySumAlloc() {
+        // Given
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(
+            createTestAllocation("GROUP1", "100.50"));
+        
+        when(tmlQueryDao.queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // When
+        allocationService.processBySumAlloc();
+        
+        // Then
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+    }
+
+    @Test
+    public void testProcessBySumAllocByBroker() {
+        // Given
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(
+            createTestAllocation("GROUP1", "100.50"));
+        
+        when(tmlQueryDao.queryForRowMapper(
+            eq(BROKER_SUM_BY_ALLOC_SQL),
+            isNull(Object[].class),
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // When
+        allocationService.processBySumAllocByBroker(TmlAllocationJobs.jobs.SUM_FILL_BROKER);
+        
+        // Then
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(BROKER_SUM_BY_ALLOC_SQL),
+            isNull(Object[].class),
+            any(TAllocationProcessMapper.class));
+    }
+
+    // Helper method to create test allocations
+    private TAllocationGenericId createTestAllocation(String groupId, String price) {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC(groupId);
+        alloc.setPriceD(new BigDecimal(price));
+        alloc.setSilentBrokerC("BROKER1");
+        return alloc;
+    }
+
+    @Test
+    public void testEmptyAllocations() {
+        // Given
+        when(tmlQueryDao.queryForRowMapper(
+            anyString(), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(Collections.emptyList());
+        
+        // When
+        allocationService.processByEachAlloc();
+        
+        // Then
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(EACH_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+    }
+
+    @Test(expected = RuntimeException.class)
+    public void testDaoExceptionHandling() {
+        // Given
+        when(tmlQueryDao.queryForRowMapper(
+            anyString(), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenThrow(new RuntimeException("Database error"));
+        
+        // When
+        allocationService.processByEachAlloc();
+    }
+}
+
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.TAllocationProcessMapper;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.RowMapper;
 
 @RunWith(MockitoJUnitRunner.class)
