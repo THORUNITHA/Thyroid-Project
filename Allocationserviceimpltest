@@ -1,4 +1,182 @@
- import static org.junit.Assert.*;
+  import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.RowMapper;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    // Constants that should match your production code
+    private static final String EACH_ALLOC_SQL = "SELECT * FROM allocations";
+    private static final String SUM_BY_ALLOC_SQL = "SELECT * FROM allocations_sum";
+    private static final String BROKER_SUM_BY_ALLOC_SQL = "SELECT * FROM broker_allocations_sum";
+    private static final String UPDATE_ALLOCATION_STATUS_QUERY = "UPDATE allocations SET status = ?";
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    // Use real String instead of mock
+    private String gmiSchema = "test_schema";
+
+    @Before
+    public void setUp() throws Exception {
+        // Initialize mocks
+        MockitoAnnotations.initMocks(this);
+        
+        // Set private fields using reflection
+        setPrivateField(allocationService, "gmiSchema", gmiSchema);
+        setPrivateField(allocationService, "log", mock(Logger.class));
+        
+        // Initialize broker enrichment map
+        setPrivateField(allocationService, "brokerEnrichmentMap", new ConcurrentHashMap<>());
+        
+        // Mock DAO responses
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+        
+        // Initialize the service
+        allocationService.init();
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    @Test
+    public void testProcessByBachAlloc() {
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(
+            createTestAllocation("GROUP1", "100.50"));
+        
+        when(tmlQueryDao.queryForRowMapper(eq(EACH_ALLOC_SQL), isNull(), any(RowMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        allocationService.processByBachAlloc();
+        
+        verify(tmlQueryDao).queryForRowMapper(eq(EACH_ALLOC_SQL), isNull(), any(RowMapper.class));
+    }
+
+    @Test
+    public void testProcessBySumAlloc() {
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(
+            createTestAllocation("GROUP1", "100.50"));
+        
+        when(tmlQueryDao.queryForRowMapper(eq(SUM_BY_ALLOC_SQL), isNull(), any(RowMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        allocationService.processBySumAlloc();
+        
+        verify(tmlQueryDao).queryForRowMapper(eq(SUM_BY_ALLOC_SQL), isNull(), any(RowMapper.class));
+    }
+
+    @Test
+    public void testProcessBySumAllocByBroker() {
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(
+            createTestAllocation("GROUP1", "100.50"));
+        
+        when(tmlQueryDao.queryForRowMapper(
+            eq(BROKER_SUM_BY_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(RowMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        allocationService.processBySumAllocByBroker(TmlAllocationJobs.jobs.SUM_FILL_BROKER);
+        
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(BROKER_SUM_BY_ALLOC_SQL),
+            isNull(Object[].class),
+            any(RowMapper.class));
+    }
+
+    @Test
+    public void testGetGmiLookUpAc() {
+        List<TAllocationGenericId> fills = Arrays.asList(
+            createTestAllocationWithAccount("C", "ACCT1", null, null),
+            createTestAllocationWithAccount("M", null, "ACCT2", null),
+            createTestAllocationWithAccount("E", null, null, "ACCT3")
+        );
+        
+        List<String> result = allocationService.getGmiLookUpAc(fills);
+        
+        assertEquals(3, result.size());
+        assertTrue(result.contains("ACCT1"));
+        assertTrue(result.contains("ACCT2"));
+        assertTrue(result.contains("ACCT3"));
+    }
+
+    @Test
+    public void testCalcAvgPxIfNoPxMatch() throws Exception {
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId alloc = createTestAllocation("GROUP1", "100.00");
+        alloc.setIsGmiPriceMatch("N");
+        container.addAsFillAndAvg(alloc);
+        
+        List<Gmitrnfl> trnflFills = Arrays.asList(
+            createGmiTrnFl(100, "110.00"),
+            createGmiTrnFl(100, "90.00")
+        );
+        
+        allocationService.calcAvgPxIfNoPxMatch(container, trnflFills);
+        
+        assertEquals(new BigDecimal("100.00"), container.getAvg().get(0).getPriceD());
+    }
+
+    // Helper methods
+    private TAllocationGenericId createTestAllocation(String groupId, String price) {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC(groupId);
+        alloc.setPriceD(new BigDecimal(price));
+        alloc.setSilentBrokerC("BROKER1");
+        return alloc;
+    }
+
+    private TAllocationGenericId createTestAllocationWithAccount(
+            String matchType, String clearingAcct, String matchAcct, String execAcct) {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setAcctMatchOnC(matchType);
+        alloc.setClearingAcctC(clearingAcct);
+        alloc.setMatchAcctC(matchAcct);
+        alloc.setExecutionAcctC(execAcct);
+        return alloc;
+    }
+
+    private Gmitrnfl createGmiTrnFl(int qty, String price) {
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(qty);
+        fill.setFtpric(new BigDecimal(price));
+        return fill;
+    }
+}
+
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
