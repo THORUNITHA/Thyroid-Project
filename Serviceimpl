@@ -1,0 +1,333 @@
+ import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.runners.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    @Qualifier("gmiSchema")
+    private String gmiSchema;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    @Mock
+    private Logger log;
+
+    @Before
+    public void setUp() throws Exception {
+        // Initialize any necessary mocks or test data
+        when(gmiSchema).thenReturn("test_schema");
+        
+        // Mock the init method behavior
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+        
+        // Mock logger
+        allocationService.log = log;
+    }
+
+    @Test
+    public void testProcessByBatchAlloc() {
+        // Setup test data
+        List<TAllocationGenericId> mockAllocations = new ArrayList<>();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        mockAllocations.add(alloc);
+        
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // Execute
+        allocationService.processByBatchAlloc();
+        
+        // Verify
+        verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class));
+        verify(log, atLeastOnce()).info(anyString());
+    }
+
+    @Test
+    public void testProcessBySumAlloc() {
+        // Setup test data
+        List<TAllocationGenericId> mockAllocations = new ArrayList<>();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        mockAllocations.add(alloc);
+        
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // Execute
+        allocationService.processBySumAlloc();
+        
+        // Verify
+        verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class));
+        verify(log, atLeastOnce()).info(anyString());
+    }
+
+    @Test
+    public void testProcessBySumAllocByBroker() {
+        // Setup test data
+        List<TAllocationGenericId> mockAllocations = new ArrayList<>();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setSilentBrokerC("BROKER1");
+        mockAllocations.add(alloc);
+        
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // Execute
+        allocationService.processBySumAllocByBroker(TmlAllocationJobs.jobs.SUM_FILL_BROKER);
+        
+        // Verify
+        verify(tmlQueryDao, atLeastOnce()).queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class));
+        verify(log, atLeastOnce()).info(anyString());
+    }
+
+    @Test
+    public void testGetAllocations() {
+        // Setup test data
+        List<TAllocationGenericId> expected = new ArrayList<>();
+        expected.add(new TAllocationGenericId());
+        
+        when(tmlQueryDao.queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class)))
+            .thenReturn(expected);
+        
+        // Execute
+        List<TAllocationGenericId> result = allocationService.getAllocations("TEST_SQL", null, new TAllocationProcessMapper());
+        
+        // Verify
+        assertEquals(expected, result);
+        verify(tmlQueryDao).queryForRowMapper(anyString(), isNull(), any(TAllocationProcessMapper.class));
+    }
+
+    @Test
+    public void testGetGmiLookUpAc() {
+        // Setup test data
+        List<TAllocationGenericId> fills = new ArrayList<>();
+        
+        TAllocationGenericId alloc1 = new TAllocationGenericId();
+        alloc1.setAcctMatchOnC("C");
+        alloc1.setClearingAcctC("ACCT1");
+        fills.add(alloc1);
+        
+        TAllocationGenericId alloc2 = new TAllocationGenericId();
+        alloc2.setAcctMatchOnC("M");
+        alloc2.setMatchAcctC("ACCT2");
+        fills.add(alloc2);
+        
+        TAllocationGenericId alloc3 = new TAllocationGenericId();
+        alloc3.setAcctMatchOnC("E");
+        alloc3.setExecutionAcctC("ACCT3");
+        fills.add(alloc3);
+        
+        // Execute
+        List<String> result = allocationService.getGmiLookUpAc(fills);
+        
+        // Verify
+        assertEquals(3, result.size());
+        assertTrue(result.contains("ACCT1"));
+        assertTrue(result.contains("ACCT2"));
+        assertTrue(result.contains("ACCT3"));
+    }
+
+    @Test
+    public void testAddFtype() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setGmiExchCdC("CME");
+        
+        // Test with CME exchange
+        String result = allocationService.addFtype(alloc, "first", "withFtype");
+        assertEquals("", result);
+        
+        // Test with non-CME exchange
+        alloc.setGmiExchCdC("NYSE");
+        result = allocationService.addFtype(alloc, "first", "withFtype");
+        assertEquals("withFtype", result);
+    }
+
+    @Test
+    public void testAddFlegnd() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        
+        // Test with UPDATE match type
+        alloc.setGmiMatchTypeC("UPDATE");
+        String result = allocationService.addFlegnd(alloc, "withFlegnd");
+        assertEquals("", result);
+        
+        // Test with non-UPDATE match type
+        alloc.setGmiMatchTypeC("ALLOCATE");
+        result = allocationService.addFlegnd(alloc, "withFlegnd");
+        assertEquals("withFlegnd", result);
+    }
+
+    @Test
+    public void testAddFtpric() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        
+        // Test with MOORECAP client and SUM_FILL_BROKER_NO_PRICE job
+        alloc.setClientC("MOORECAP");
+        allocationService.currentJob = TmlAllocationJobs.jobs.SUM_FILL_BROKER_NO_PRICE;
+        String result = allocationService.addFtpric(alloc, "withFtpric");
+        assertEquals("", result);
+        
+        // Test with IsGmiPriceMatch = N
+        alloc.setClientC("OTHER");
+        alloc.setIsGmiPriceMatch("N");
+        result = allocationService.addFtpric(alloc, "withFtpric");
+        assertEquals("", result);
+        
+        // Test default case
+        alloc.setIsGmiPriceMatch("Y");
+        result = allocationService.addFtpric(alloc, "withFtpric");
+        assertEquals("withFtpric", result);
+    }
+
+    @Test
+    public void testIsOnlyEnrichment() {
+        AllocContainer container = new AllocContainer();
+        
+        // Test with ALLOCATE match type
+        TAllocationGenericId alloc1 = new TAllocationGenericId();
+        alloc1.setGmiMatchTypeC("ALLOCATE");
+        container.addAsFillAndAvg(alloc1);
+        assertFalse(allocationService.isOnlyEnrichment(container));
+        
+        // Test with UPDATE match type
+        TAllocationGenericId alloc2 = new TAllocationGenericId();
+        alloc2.setGmiMatchTypeC("UPDATE");
+        container.addAsFillAndAvg(alloc2);
+        assertTrue(allocationService.isOnlyEnrichment(container));
+    }
+
+    @Test
+    public void testCalcAvgPxIfNoPxMatch() {
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setIsGmiPriceMatch("N");
+        alloc.setPriceD(new BigDecimal("100.00"));
+        container.addAsFillAndAvg(alloc);
+        
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        Gmitrnfl fill1 = new Gmitrnfl();
+        fill1.setFqty(100);
+        fill1.setFtpric(new BigDecimal("110.00"));
+        trnflFills.add(fill1);
+        
+        Gmitrnfl fill2 = new Gmitrnfl();
+        fill2.setFqty(100);
+        fill2.setFtpric(new BigDecimal("90.00"));
+        trnflFills.add(fill2);
+        
+        // Execute
+        allocationService.calcAvgPxIfNoPxMatch(container, trnflFills);
+        
+        // Verify
+        assertEquals(new BigDecimal("100.00"), container.getAvg().get(0).getPriceD());
+    }
+
+    @Test
+    public void testGetPriceMulQty() {
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        
+        Gmitrnfl fill1 = new Gmitrnfl();
+        fill1.setFqty(100);
+        fill1.setFtpric(new BigDecimal("10.00"));
+        trnflFills.add(fill1);
+        
+        Gmitrnfl fill2 = new Gmitrnfl();
+        fill2.setFqty(200);
+        fill2.setFtpric(new BigDecimal("20.00"));
+        trnflFills.add(fill2);
+        
+        // Execute
+        double result = allocationService.getPriceMulQty(trnflFills);
+        
+        // Verify
+        assertEquals(5000.0, result, 0.001);
+    }
+
+    @Test
+    public void testGetSumQty() {
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        
+        Gmitrnfl fill1 = new Gmitrnfl();
+        fill1.setFqty(100);
+        trnflFills.add(fill1);
+        
+        Gmitrnfl fill2 = new Gmitrnfl();
+        fill2.setFqty(200);
+        trnflFills.add(fill2);
+        
+        // Execute
+        int result = allocationService.getSumQty(trnflFills);
+        
+        // Verify
+        assertEquals(300, result);
+    }
+
+    @Test
+    public void testApplyEnrichment() {
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("MANAHL");
+        alloc.setUnChangedexecBrkMneC("BRK1");
+        alloc.setGmiExchCdC("EXCH1");
+        alloc.setSilentBrokerC("SILENT1");
+        container.addAsFillAndAvg(alloc);
+        
+        // Setup broker enrichment map
+        allocationService.brokerEnrichmentMap = new ConcurrentHashMap<>();
+        allocationService.brokerEnrichmentMap.put("EXCH1_SILENT1_BRK1", "ENRICHED_VALUE");
+        
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        
+        // Execute
+        allocationService.applyEnrichment(container, trnflFills);
+        
+        // Verify
+        assertEquals("ENRICHED_VALUE", alloc.getBrokerEnrichment());
+    }
+
+    @Test
+    public void testSaveTracesInTml() {
+        List<String> ftraceL = Arrays.asList("TRACE1", "TRACE2");
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setId(1L);
+        alloc.setClientC("TEST");
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        
+        // Execute
+        allocationService.saveTracesInTml(ftraceL, alloc);
+        
+        // Verify
+        verify(allocRepository).saveAllocProcesses(anyList());
+        verify(log).info(contains("request to add ftrace"));
+    }
+}
