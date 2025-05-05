@@ -1,4 +1,239 @@
-   import static org.junit.Assert.*;
+ import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.TAllocationProcessMapper;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    @Mock
+    @Qualifier("gmiSchema")
+    private String gmiSchema;
+
+    private Logger log = Logger.getLogger(AllocationServiceImpl.class);
+
+    @Before
+    public void setUp() throws Exception {
+        MockitoAnnotations.initMocks(this);
+        
+        // Initialize broker enrichment map
+        ConcurrentHashMap<String, String> brokerEnrichmentMap = new ConcurrentHashMap<>();
+        brokerEnrichmentMap.put("EXCH_BROKER_MNEMONIC", "ENRICHED_VALUE");
+        setPrivateField(allocationService, "brokerEnrichmentMap", brokerEnrichmentMap);
+        
+        // Set logger
+        setPrivateField(allocationService, "log", log);
+        
+        when(gmiSchema).thenReturn("TEST_SCHEMA");
+    }
+
+    @Test
+    public void testApplyEnrichment() throws Exception {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("MANAHL");
+        alloc.setUnChangedexecBrkMneC("MNEMONIC");
+        alloc.setGmiExchCdC("EXCH");
+        alloc.setSilentBrokerC("BROKER");
+        container.addAsFillAndAvg(alloc);
+        
+        List<Gmitrnfl> trnflFills = new ArrayList<>();
+        
+        // Execute
+        allocationService.applyEnrichment(container, trnflFills);
+        
+        // Verify
+        assertEquals("ENRICHED_VALUE", alloc.getBrokerEnrichment());
+        verify(log).info(anyString());
+    }
+
+    @Test
+    public void testIsOnlyEnrichment() throws Exception {
+        // Test ALLOCATE case
+        AllocContainer container1 = new AllocContainer();
+        TAllocationGenericId alloc1 = new TAllocationGenericId();
+        alloc1.setGmiMatchTypeC("ALLOCATE");
+        container1.addAsFillAndAvg(alloc1);
+        assertFalse(allocationService.isonlyEnrichment(container1));
+        
+        // Test UPDATE case
+        AllocContainer container2 = new AllocContainer();
+        TAllocationGenericId alloc2 = new TAllocationGenericId();
+        alloc2.setGmiMatchTypeC("UPDATE");
+        container2.addAsFillAndAvg(alloc2);
+        assertTrue(allocationService.isonlyEnrichment(container2));
+        
+        // Test empty case
+        assertTrue(allocationService.isonlyEnrichment(new AllocContainer()));
+    }
+
+    @Test
+    public void testEnrichmentContainer() throws Exception {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("MANAHL");
+        alloc.setGmiMatchTypeC("UPDATE");
+        container.addAsFillAndAvg(alloc);
+        
+        List<String> ftraceL = Arrays.asList("TRACE1", "TRACE2");
+        
+        // Mock repository
+        doNothing().when(allocRepository).saveAllocProcesses(anyList());
+        
+        // Execute
+        allocationService.enrichment(container, ftraceL);
+        
+        // Verify
+        verify(allocRepository).saveAllocProcesses(anyList());
+        verify(log, times(2)).info(anyString());
+    }
+
+    @Test
+    public void testUpdateMatchedStatus() throws Exception {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        container.addAsFillAndAvg(alloc);
+        
+        // Mock repository
+        doNothing().when(allocRepository).saveAllocProcesses(anyList());
+        
+        // Execute
+        allocationService.updateMatchedStatus("Y", "Test message", container);
+        
+        // Verify
+        verify(allocRepository).saveAllocProcesses(anyList());
+    }
+
+    @Test
+    public void testFrefnoEnrichment() throws Exception {
+        // Setup
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setOrderOrigC("ORIG1234567890"); // 12 chars
+        List<String> ftraceL = Arrays.asList("TRACE1");
+        Map<String, String> extidMap = new HashMap<>();
+        
+        // Mock DAO
+        when(gmiQueryDao.updateWithInClause(anyString(), anyMap())).thenReturn(1);
+        
+        // Execute
+        allocationService.frefnoEnrichment(alloc, ftraceL, extidMap);
+        
+        // Verify
+        verify(gmiQueryDao).updateWithInClause(anyString(), anyMap());
+        verify(log).info(contains("New value: ORIG12345678"));
+    }
+
+    @Test
+    public void testBrokerEnrichment() throws Exception {
+        // Setup
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setUnChangedexecBrkMneC("MNEMONIC");
+        alloc.setGmiExchCdC("EXCH");
+        alloc.setSilentBrokerC("BROKER");
+        alloc.setGmiMatchTypeC("UPDATE");
+        List<String> ftraceL = Arrays.asList("TRACE1");
+        
+        // Mock DAO
+        when(gmiQueryDao.updateWithInClause(anyString(), anyMap())).thenReturn(1);
+        
+        // Execute
+        allocationService.brokerEnrichment(alloc, ftraceL, null);
+        
+        // Verify
+        verify(gmiQueryDao).updateWithInClause(anyString(), anyMap());
+        verify(log).info(contains("broker enrichment for"));
+    }
+
+    @Test
+    public void testSaveTracesInTml() throws Exception {
+        // Setup
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientC("TEST");
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setId(123L);
+        List<String> ftraceL = Arrays.asList("TRACE1");
+        
+        // Mock repository
+        doNothing().when(allocRepository).saveAllocProcesses(anyList());
+        
+        // Execute
+        allocationService.saveTracesInTml(ftraceL, alloc);
+        
+        // Verify
+        verify(allocRepository).saveAllocProcesses(anyList());
+        verify(log).info(contains("request to add ftrace"));
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+}
+
+@Test
+public void testFrefnoEnrichmentWithNullOrderOrig() throws Exception {
+    TAllocationGenericId alloc = new TAllocationGenericId();
+    alloc.setOrderOrigC(null);
+    List<String> ftraceL = Arrays.asList("TRACE1");
+    
+    allocationService.frefnoEnrichment(alloc, ftraceL, null);
+    
+    verify(log).info(contains("frefno should not be empty"));
+    verify(allocRepository).saveAllocProcesses(anyList());
+}
+
+@Test
+public void testSaveListLargeBatch() throws Exception {
+    List<TAllocGmiRef> largeList = new ArrayList<>();
+    for (int i = 0; i < 1000; i++) {
+        TAllocGmiRef ref = new TAllocGmiRef();
+        largeList.add(ref);
+    }
+    
+    // Mock repository
+    doNothing().when(allocRepository).saveAllocProcesses(anyList());
+    
+    allocationService.saveList(largeList);
+    
+    // Verify it handles large batches by splitting
+    verify(allocRepository, atLeast(2)).saveAllocProcesses(anyList());
+}
+
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
