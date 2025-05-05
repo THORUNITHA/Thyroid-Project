@@ -1,4 +1,162 @@
-  @Test
+  
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.Field;
+
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.TAllocationProcessMapper;
+import com.baml.tml.tmlbase.trade.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.*;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+@RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+
+    private static final String EACH_ALLOC_SQL = 
+        "SELECT * FROM T_GMI_ALLOC_PROCESS WHERE 1=1 " +
+        "AND (TRADE_DATE_DT = trunc(SYSDATE-0) " +
+        "OR (TRADE_DATE_DT < trunc(SYSDATE-0) " + 
+        "AND trunc(LAST_UPDATE_TS) = trunc(sysdate-0))) " +
+        "AND DOWNSTREAM_STATUS_SW in ('RTS', 'NMY') " +
+        "order by id_i";
+
+    @InjectMocks
+    private AllocationServiceImpl allocationService;
+
+    @Mock
+    @Qualifier("tmlQueryDao")
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    @Qualifier("gmiQueryDao")
+    private QueryDaoJdbc gmiQueryDao;
+
+    @Mock
+    private AllocRepository allocRepository;
+
+    private String gmiSchema = "test_schema";
+
+    @Before
+    public void setUp() throws Exception {
+        MockitoAnnotations.initMocks(this);
+        
+        setPrivateField(allocationService, "gmiSchema", gmiSchema);
+        setPrivateField(allocationService, "log", mock(Logger.class));
+        setPrivateField(allocationService, "brokerEnrichmentMap", new ConcurrentHashMap<>());
+        
+        Map<String, PriceScaling> priceMap = new HashMap<>();
+        when(tmlQueryDao.getSpecificPriceMap(anyString())).thenReturn(priceMap);
+    }
+
+    @Test
+    public void testProcessByEachAlloc() {
+        // 1. Create test allocation with ALL required fields
+        TAllocationGenericId alloc = createCompleteTestAllocation();
+        List<TAllocationGenericId> mockAllocations = Collections.singletonList(alloc);
+        
+        // 2. Mock DAO response
+        when(tmlQueryDao.queryForRowMapper(
+            eq(EACH_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class)))
+            .thenReturn(mockAllocations);
+        
+        // 3. Mock GMI response
+        List<Gmitrnfl> mockTrnflFills = new ArrayList<>();
+        Gmitrnfl fill = new Gmitrnfl();
+        fill.setFqty(alloc.getQuantityI());
+        fill.setFtpric(alloc.getPriceD());
+        mockTrnflFills.add(fill);
+        
+        when(gmiQueryDao.queryForRowMapper(anyString(), any(Object[].class), any()))
+            .thenReturn(mockTrnflFills);
+        
+        // 4. Execute
+        allocationService.processByEachAlloc();
+        
+        // 5. Verify
+        verify(tmlQueryDao).queryForRowMapper(
+            eq(EACH_ALLOC_SQL), 
+            isNull(Object[].class), 
+            any(TAllocationProcessMapper.class));
+    }
+
+    private TAllocationGenericId createCompleteTestAllocation() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        // Required fields
+        alloc.setTmlAllocGroupIdC("GROUP1");
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setQuantityI(100);
+        
+        // Account fields required for getGmiLookUpAc
+        alloc.setAcctMatchOnC("C"); // or "M"/"E" depending on your needs
+        alloc.setClearingAcctC("CLEARING_ACCT");
+        alloc.setMatchAcctC("MATCH_ACCT"); // If using match account
+        alloc.setExecutionAcctC("EXEC_ACCT"); // If using exec account
+        
+        // Other required fields
+        alloc.setTradeDateD(new Date());
+        alloc.setGmiExchCdC("EXCH");
+        alloc.setSilentBrokerC("BROKER1");
+        
+        return alloc;
+    }
+
+    @Test
+    public void testGetGmiLookUpAc() {
+        // Test all account matching scenarios
+        List<TAllocationGenericId> fills = new ArrayList<>();
+        
+        // Clearing account case
+        TAllocationGenericId alloc1 = createCompleteTestAllocation();
+        alloc1.setAcctMatchOnC("C");
+        alloc1.setClearingAcctC("CLEARING_ACCT");
+        fills.add(alloc1);
+        
+        // Match account case
+        TAllocationGenericId alloc2 = createCompleteTestAllocation();
+        alloc2.setAcctMatchOnC("M");
+        alloc2.setMatchAcctC("MATCH_ACCT");
+        fills.add(alloc2);
+        
+        // Execution account case
+        TAllocationGenericId alloc3 = createCompleteTestAllocation();
+        alloc3.setAcctMatchOnC("E");
+        alloc3.setExecutionAcctC("EXEC_ACCT");
+        fills.add(alloc3);
+        
+        // Default case
+        TAllocationGenericId alloc4 = createCompleteTestAllocation();
+        alloc4.setAcctMatchOnC(null);
+        alloc4.setClearingAcctC("DEFAULT_ACCT");
+        fills.add(alloc4);
+        
+        List<String> result = allocationService.getGmiLookUpAc(fills);
+        
+        assertEquals(4, result.size());
+        assertTrue(result.contains("CLEARING_ACCT"));
+        assertTrue(result.contains("MATCH_ACCT"));
+        assertTrue(result.contains("EXEC_ACCT"));
+        assertTrue(result.contains("DEFAULT_ACCT"));
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws NoSuchFieldException, IllegalAccessException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+}
+
+@Test
 public void testProcessByEachAlloc() {
     // Given
     TAllocationGenericId testAlloc = createTestAllocation("GROUP1", "100.50");
