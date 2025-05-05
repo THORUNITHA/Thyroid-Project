@@ -1,5 +1,49 @@
+  @Test
+public void testProcessByEachAlloc() {
+    // Given
+    TAllocationGenericId testAlloc = createTestAllocation("GROUP1", "100.50");
+    List<TAllocationGenericId> mockAllocations = Collections.singletonList(testAlloc);
 
-  import static org.junit.Assert.*;
+    AllocContainer mockContainer = mock(AllocContainer.class);
+    when(mockContainer.getFills()).thenReturn(mockAllocations);
+
+    Map<String, AllocContainer> allocMap = new HashMap<>();
+    allocMap.put("GROUP1", mockContainer);
+
+    // Stub DAO call
+    when(tmlQueryDao.queryForRowMapper(
+            eq(EACH_ALLOC_SQL),
+            isNull(Object[].class),
+            any(TAllocationProcessMapper.class))
+    ).thenReturn(mockAllocations);
+
+    // Stub getGmiLookUpAC if needed
+    when(allocationService.getGmiLookUpAC(anyList())).thenReturn(mock(LookUpAC.class));
+
+    // Optionally stub methods like checkForEachFillExistInGMI if they're not real
+    doReturn(true).when(allocationService).checkForEachFillExistInGMI(
+            anyList(), anyList(), anyList(), any()
+    );
+
+    // Inject the mocked map into the private method using reflection (if needed)
+    ReflectionTestUtils.invokeMethod(
+        allocationService,
+        "processAllocs",
+        TmlInternalApsJobs.jobs.BACH_FILL,
+        allocMap
+    );
+
+    // Then
+    verify(tmlQueryDao).queryForRowMapper(
+            eq(EACH_ALLOC_SQL),
+            isNull(Object[].class),
+            any(TAllocationProcessMapper.class)
+    );
+}
+
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
