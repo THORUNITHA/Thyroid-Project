@@ -1,4 +1,35 @@
- import static org.junit.Assert.*;
+ @RunWith(MockitoJUnitRunner.class)
+public class AllocationServiceImplTest {
+    // ... other test methods ...
+
+    @Test
+    public void testUpdateMatchedStatus() {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        container.addAsFillAndAvg(new TAllocationGenericId());
+        
+        // Solution 1: If you know the method returns int
+        when(allocRepository.saveAllocProcesses(anyList())).thenReturn(1);
+        
+        // Solution 2: If you're not sure
+        try {
+            doNothing().when(allocRepository).saveAllocProcesses(anyList());
+        } catch (org.mockito.exceptions.base.MockitoException e) {
+            when(allocRepository.saveAllocProcesses(anyList())).thenReturn(1);
+        }
+        
+        // Execute
+        allocationService.updateMatchedStatus("Y", "Message", container);
+        
+        // Verify
+        verify(allocRepository).saveAllocProcesses(anyList());
+    }
+
+    // ... other test methods ...
+}
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
