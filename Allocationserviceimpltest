@@ -1,4 +1,100 @@
- @RunWith(MockitoJUnitRunner.class)
+  @RunWith(MockitoJUnitRunner.class)
+public class TmlApsCHFeedUtilTest {
+
+    @InjectMocks
+    private TmlApsCHFeedUtil util;
+
+    @Mock
+    private QueryDaoJdbc tmlQueryDao;
+
+    @Mock
+    private ImICollectionUtil imICollectionUtil;
+
+    @Mock
+    private SqlRowSet sqlRowSet;
+
+    @Test
+    public void testUpdateStatus_withClientProvidedGroupId() throws Exception {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setClientProvidedApsGrpIdC("123456");
+
+        AllocContainer container = new AllocContainer();
+        container.setFills(Collections.singletonList(alloc));
+        List<TClearhouseMaster> chMsgs = Collections.singletonList(mock(TClearhouseMaster.class));
+
+        MessageStatus status = new MessageStatus("SUCCESS", "Client provided test");
+
+        boolean result = util.updateStatus(status, chMsgs, container, true);
+
+        assertTrue(result);
+    }
+
+    @Test
+    public void testUpdateStatus_withoutClientProvidedGroupId() throws Exception {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+
+        AllocContainer container = new AllocContainer();
+        container.setFills(Collections.singletonList(alloc));
+        List<TClearhouseMaster> chMsgs = Collections.singletonList(mock(TClearhouseMaster.class));
+
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(sqlRowSet);
+        when(sqlRowSet.next()).thenReturn(true);
+        when(sqlRowSet.getString("GROUP_ID")).thenReturn("99999");
+
+        MessageStatus status = new MessageStatus("SUCCESS", "No client group ID");
+
+        boolean result = util.updateStatus(status, chMsgs, container, false);
+
+        assertTrue(result);
+    }
+
+    @Test
+    public void testPrivate_updateMatchedStatus_viaReflection() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setIdI(1L);
+        alloc.setDownstreamStatusSw("NOT MATCHED");
+
+        AllocContainer container = new AllocContainer();
+        container.setFills(Collections.singletonList(alloc));
+
+        MessageStatus status = new MessageStatus("DONE", "Private method test");
+
+        ReflectionTestUtils.invokeMethod(util, "updateMatchedStatus", "GID12", status, container);
+
+        verify(tmlQueryDao, atLeastOnce()).updateWithInClause(anyString(), anyMap());
+    }
+
+    @Test
+    public void testPrivate_updateChFeedStatus_viaReflection() {
+        TClearhouseMaster chm = mock(TClearhouseMaster.class);
+        when(chm.getIdI()).thenReturn(123L);
+
+        AllocContainer container = new AllocContainer();
+        List<TClearhouseMaster> chList = Collections.singletonList(chm);
+
+        // Reflectively call updateChFeedStatus
+        ReflectionTestUtils.invokeMethod(util, "updateChFeedStatus", "GRP88", chList, container);
+
+        verify(tmlQueryDao, atLeastOnce()).updateWithInClause(anyString(), anyMap());
+    }
+
+    @Test
+    public void testPrivate_updateAllocGenericList_viaReflection() {
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setSourceIdI(BigDecimal.valueOf(456L));
+
+        AllocContainer container = new AllocContainer();
+        container.setAvg(Collections.singletonList(alloc));
+
+        ReflectionTestUtils.invokeMethod(util, "updateAllocGenericList", "GRP77", container, "UPDATE QRY");
+
+        verify(tmlQueryDao).updateWithInClause(anyString(), anyMap());
+    }
+}
+
+
+
+@RunWith(MockitoJUnitRunner.class)
 public class AllocationServiceImplTest {
     // ... other test methods ...
 
