@@ -1,6 +1,234 @@
  import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.log4j.Logger;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.runners.MockitoJUnitRunner;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
+
+import com.baml.tml.tmlaps.model.MessageStatus;
+import com.baml.tml.tmlaps.onExchange.service.TmlOnExchangeApsService;
+import com.baml.tml.tmlbase.trade.model.AllocContainer;
+import com.baml.tml.tmlbase.trade.persistence.dao.TAllocationGenericId;
+import com.baml.tml.tmlbase.trade.persistence.dao.TClearhouseMaster;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @Mock
+    private QueryDaoJdbc tmlQueryDao;
+    
+    @Mock
+    private Logger log;
+    
+    @Mock
+    private SqlRowSet rowSet;
+    
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service = new TmlOnExchangeApsServiceImpl();
+    
+    private Map<String, AllocContainer> testContainerMap;
+    
+    @Before
+    public void setUp() throws Exception {
+        // Initialize test data
+        testContainerMap = new HashMap<>();
+        
+        // Set up mock behavior for logger
+        Logger realLogger = Logger.getLogger(TmlOnExchangeApsServiceImpl.class);
+        when(log.isInfoEnabled()).thenReturn(true);
+        when(log.isWarnEnabled()).thenReturn(true);
+        when(log.isErrorEnabled()).thenReturn(true);
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithValidContainer() {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId fill1 = new TAllocationGenericId();
+        fill1.setPrice(10.0);
+        fill1.setQty(100);
+        container.setFills(Arrays.asList(fill1));
+        
+        TAllocationGenericId avg1 = new TAllocationGenericId();
+        avg1.setPrice(10.0);
+        avg1.setQty(100);
+        container.setAvg(Arrays.asList(avg1));
+        
+        testContainerMap.put("TEST_KEY", container);
+        
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No more rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).info("Start processByReplayPartialGroups()");
+        verify(log).info(contains("REPLAY FILL SQL query="));
+        verify(log).info("Start updating match status N to RTS.");
+        verify(log).info("Completed processByReplayPartialGroups()");
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithOnlyAvg() {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId avg1 = new TAllocationGenericId();
+        avg1.setPrice(10.0);
+        avg1.setQty(100);
+        container.setAvg(Arrays.asList(avg1));
+        
+        testContainerMap.put("TEST_KEY", container);
+        
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No more rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).warn(contains(":no Fills:"));
+        verify(log, never()).info("Start updating match status N to RTS.");
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithPriceQtyMismatch() {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        TAllocationGenericId fill1 = new TAllocationGenericId();
+        fill1.setPrice(10.0);
+        fill1.setQty(100);
+        container.setFills(Arrays.asList(fill1));
+        
+        TAllocationGenericId avg1 = new TAllocationGenericId();
+        avg1.setPrice(20.0); // Different price
+        avg1.setQty(100);
+        container.setAvg(Arrays.asList(avg1));
+        
+        testContainerMap.put("TEST_KEY", container);
+        
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No more rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).warn(contains("still doesn't match fills against avg trades sum(price*qty)"));
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithEmptyContainerMap() {
+        // Setup
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).info("Start processByReplayPartialGroups()");
+        verify(log).info("Completed processByReplayPartialGroups()");
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithDatabaseException() {
+        // Setup
+        when(tmlQueryDao.getRowSet(anyString())).thenThrow(new RuntimeException("DB Error"));
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).error(contains("error occurred while processing replay partial groups"));
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithNullContainer() {
+        // Setup
+        testContainerMap.put("TEST_KEY", null);
+        
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No more rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).error(contains("Null container found for key"));
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithEmptyFillsAndAvg() {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        container.setFills(new ArrayList<>());
+        container.setAvg(new ArrayList<>());
+        
+        testContainerMap.put("TEST_KEY", container);
+        
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No more rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).warn(contains(":no Fills:"));
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithMultipleFillsAndAvg() {
+        // Setup
+        AllocContainer container = new AllocContainer();
+        
+        // Create fills
+        TAllocationGenericId fill1 = new TAllocationGenericId();
+        fill1.setPrice(10.0);
+        fill1.setQty(100);
+        
+        TAllocationGenericId fill2 = new TAllocationGenericId();
+        fill2.setPrice(10.0);
+        fill2.setQty(50);
+        
+        container.setFills(Arrays.asList(fill1, fill2));
+        
+        // Create avg
+        TAllocationGenericId avg1 = new TAllocationGenericId();
+        avg1.setPrice(10.0);
+        avg1.setQty(150); // Sum of fills qty
+        container.setAvg(Arrays.asList(avg1));
+        
+        testContainerMap.put("TEST_KEY", container);
+        
+        when(tmlQueryDao.getRowSet(anyString())).thenReturn(rowSet);
+        when(rowSet.next()).thenReturn(false); // No more rows
+        
+        // Test
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).info("Start updating match status N to RTS.");
+    }
+}
+
+
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
