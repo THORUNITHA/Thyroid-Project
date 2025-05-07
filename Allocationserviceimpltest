@@ -1,4 +1,210 @@
- import static org.junit.Assert.*;
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.log4j.Logger;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.runners.MockitoJUnitRunner;
+
+import com.baml.tml.tmlbase.trade.model.AllocClientStaticContainer;
+import com.baml.tml.tmlbase.trade.persistence.dao.TAllocationGenericId;
+import com.baml.tml.tmlbase.trade.persistence.dao.TClearhouseMaster;
+import com.baml.tml.tmlbase.trade.util.RecursiveExitException;
+import com.baml.tml.tmlbase.trade.util.RecursiveTooManyCallsExitException;
+import com.baml.tml.tmlbase.trade.util.SubsetCHMaster;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @Mock
+    private Logger log;
+    
+    @Mock
+    private AllocClientStaticContainer allocClientStaticContainer;
+    
+    @Mock
+    private TAllocationGenericId alloc1, alloc2;
+    
+    @Mock
+    private TClearhouseMaster chMaster1, chMaster2;
+    
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+    
+    private List<String> testSuspenseAccounts;
+    
+    @Before
+    public void setUp() throws Exception {
+        testSuspenseAccounts = Arrays.asList("SUSP1", "SUSP2");
+        
+        when(allocClientStaticContainer.clientSuspenseAccounts()).thenReturn(testSuspenseAccounts);
+        when(log.isInfoEnabled()).thenReturn(true);
+        when(log.isErrorEnabled()).thenReturn(true);
+        
+        // Initialize clientStaticMap through reflection
+        Map<String, AllocClientStaticContainer> clientStaticMap = new HashMap<>();
+        setPrivateField(service, "clientStaticMap", clientStaticMap);
+    }
+    
+    // Helper method to set private fields using reflection
+    private void setPrivateField(Object target, String fieldName, Object value) 
+            throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+    
+    // Helper method to get private field using reflection
+    @SuppressWarnings("unchecked")
+    private Map<String, AllocClientStaticContainer> getClientStaticMap() 
+            throws Exception {
+        Field field = service.getClass().getDeclaredField("clientStaticMap");
+        field.setAccessible(true);
+        return (Map<String, AllocClientStaticContainer>) field.get(service);
+    }
+    
+    @Test
+    public void testClientSusaAccount_WithExistingClient() throws Exception {
+        // Setup
+        getClientStaticMap().put("TEST_CLIENT", allocClientStaticContainer);
+        
+        // Execute
+        List<String> result = service.clientSusaAccount("TEST_CLIENT");
+        
+        // Verify
+        assertEquals(testSuspenseAccounts, result);
+    }
+    
+    @Test
+    public void testClientSusaAccount_WithNonExistingClient() throws Exception {
+        // Execute
+        List<String> result = service.clientSusaAccount("NON_EXISTING_CLIENT");
+        
+        // Verify
+        assertNull(result);
+    }
+    
+    @Test
+    public void testSleep_InterruptedException() {
+        // Setup
+        Thread.currentThread().interrupt();
+        
+        // Execute
+        service.sleep(0);
+        
+        // Verify
+        verify(log).error(contains("error occured while sleeping"), any(InterruptedException.class));
+        assertTrue(Thread.interrupted()); // Clears interrupt status
+    }
+    
+    @Test
+    public void testCheckIfFillsSumMatches_WithMatchingFills() throws Exception {
+        // Setup
+        List<TAllocationGenericId> fills = Arrays.asList(alloc1, alloc2);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACC1", "ACC2");
+        
+        when(alloc1.getPriceD()).thenReturn(10.0);
+        when(alloc2.getPriceD()).thenReturn(10.0);
+        when(alloc1.getQuantityI()).thenReturn(100);
+        when(alloc2.getQuantityI()).thenReturn(200);
+        
+        // Mock the database query result
+        List<TClearhouseMaster> mockFeed = Arrays.asList(chMaster1, chMaster2);
+        when(service.getClearHouseFeedoriginal(anyString(), anyMap())).thenReturn(mockFeed);
+        
+        // Execute
+        boolean result = service.checkIfFillsSumMatches(fills, chMsgs, accounts);
+        
+        // Verify
+        assertTrue(result);
+        assertEquals(2, chMsgs.size());
+        verify(log).info(contains("sum of qty for price:10.0"));
+    }
+    
+    @Test
+    public void testCheckIfFillsSumMatches_WithRecursiveExitException() throws Exception {
+        // Setup
+        List<TAllocationGenericId> fills = Arrays.asList(alloc1);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACC1");
+        
+        when(alloc1.getPriceD()).thenReturn(10.0);
+        when(alloc1.getQuantityI()).thenReturn(100);
+        
+        List<TClearhouseMaster> mockFeed = Arrays.asList(chMaster1, chMaster2);
+        when(service.getClearHouseFeedoriginal(anyString(), anyMap())).thenReturn(mockFeed);
+        
+        // Mock SubsetCHMaster to throw RecursiveExitException
+        doThrow(new RecursiveExitException()).when(service)
+            .mockSubsetCHMasterSumUp(anyList(), anyInt(), anyList());
+        
+        // Execute
+        boolean result = service.checkIfFillsSumMatches(fills, chMsgs, accounts);
+        
+        // Verify
+        assertTrue(result);
+        verify(log).info("found a match with recursive");
+    }
+    
+    @Test
+    public void testCheckIfFillsSumMatches_WithEmptyResult() throws Exception {
+        // Setup
+        List<TAllocationGenericId> fills = Arrays.asList(alloc1);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACC1");
+        
+        when(alloc1.getPriceD()).thenReturn(10.0);
+        when(alloc1.getQuantityI()).thenReturn(100);
+        
+        // Return empty list from database query
+        when(service.getClearHouseFeedoriginal(anyString(), anyMap())).thenReturn(new ArrayList<>());
+        
+        // Execute
+        boolean result = service.checkIfFillsSumMatches(fills, chMsgs, accounts);
+        
+        // Verify
+        assertFalse(result);
+        assertTrue(chMsgs.isEmpty());
+    }
+    
+    @Test
+    public void testProcessByReplayPartialGroups_WithValidContainer() throws Exception {
+        // Setup mock container
+        AllocContainer container = mock(AllocContainer.class);
+        when(container.hasOnlyAvg()).thenReturn(false);
+        when(container.hasSamePriceQty(5)).thenReturn(true);
+        
+        // Setup mock database result
+        Map<String, AllocContainer> mockMap = new HashMap<>();
+        mockMap.put("TEST_KEY", container);
+        when(service.getAllocs(anyString())).thenReturn(mockMap);
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(log).info("Start processByReplayPartialGroups()");
+        verify(log).info("Start updating match status N to RTS.");
+        verify(log).info("Completed processByReplayPartialGroups()");
+        verify(service).updateMatchedStatus(any(MessageStatus.class), eq(container));
+    }
+}
+
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
