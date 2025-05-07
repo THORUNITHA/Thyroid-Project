@@ -1,4 +1,24 @@
- import static org.junit.Assert.*;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@Test
+public void testGetQ_WithSpringUtils() {
+    // Setup
+    mockMaster.setExchangeCdC("IFUS");
+    mockMaster.setDestIdC("DEST1");
+    
+    Map<String, String> queues = new HashMap<>();
+    queues.put("IFUS.DEST1", "TEST.QUEUE");
+    
+    // Set private field
+    ReflectionTestUtils.setField(service, "outBoundQueues", queues);
+    
+    // Invoke private method
+    String result = ReflectionTestUtils.invokeMethod(service, "getQ", mockMaster);
+    
+    assertEquals("TEST.QUEUE", result);
+}
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
