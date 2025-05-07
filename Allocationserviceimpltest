@@ -1,4 +1,147 @@
- import static org.junit.Assert.*;
+  import static org.mockito.Mockito.*;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.runners.MockitoJUnitRunner;
+
+import com.baml.tml.tmlaps.model.MessageStatus;
+import com.baml.tml.tmlbase.trade.model.AllocContainer;
+import com.baml.tml.tmlbase.trade.persistence.dao.TAllocationGenericId;
+import com.baml.tml.tmlbase.trade.persistence.dao.util.QueryDaoJdbc;
+
+@RunWith(MockitoJUnitRunner.class)
+public class ProcessByReplayPartialGroupsConditionsTest {
+
+    @Mock
+    private QueryDaoJdbc tmlQueryDao;
+    
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+    
+    private Map<String, AllocContainer> testData;
+    
+    @Before
+    public void setUp() {
+        testData = new HashMap<>();
+    }
+    
+    @Test
+    public void testContainerWithOnlyAvg() {
+        // Setup container with only avg (no fills)
+        AllocContainer container = mock(AllocContainer.class);
+        when(container.hasOnlyAvg()).thenReturn(true);
+        
+        testData.put("TEST_KEY", container);
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(container).hasOnlyAvg();
+        verify(service).statusFailure("TEST_KEY", container);
+        verify(service, never()).updateMatchedStatus(any(), any());
+    }
+    
+    @Test
+    public void testContainerWithPriceQtyMismatch() {
+        // Setup container with price/qty mismatch
+        AllocContainer container = mock(AllocContainer.class);
+        when(container.hasOnlyAvg()).thenReturn(false);
+        when(container.hasSamePriceQty(5)).thenReturn(false);
+        
+        testData.put("TEST_KEY", container);
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(container).hasOnlyAvg();
+        verify(container).hasSamePriceQty(5);
+        verify(service).statusFailure("TEST_KEY", container);
+        verify(service, never()).updateMatchedStatus(any(), any());
+    }
+    
+    @Test
+    public void testContainerWithMatchingFills() {
+        // Setup container with matching fills and avg
+        AllocContainer container = mock(AllocContainer.class);
+        when(container.hasOnlyAvg()).thenReturn(false);
+        when(container.hasSamePriceQty(5)).thenReturn(true);
+        
+        testData.put("TEST_KEY", container);
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(container).hasOnlyAvg();
+        verify(container).hasSamePriceQty(5);
+        verify(service).updateMatchedStatus(
+            argThat(msg -> "RTS".equals(msg.getStatus())),
+            eq(container)
+        );
+        verify(service, never()).statusFailure(any(), any());
+    }
+    
+    @Test
+    public void testEmptyContainerMap() {
+        // Setup empty map
+        testData.clear();
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify no failures or updates called
+        verify(service, never()).statusFailure(any(), any());
+        verify(service, never()).updateMatchedStatus(any(), any());
+    }
+    
+    @Test
+    public void testContainerWithNullValues() {
+        // Setup container with null values
+        AllocContainer container = mock(AllocContainer.class);
+        when(container.hasOnlyAvg()).thenReturn(true); // Treat as only avg
+        
+        testData.put("TEST_KEY", container);
+        testData.put("NULL_KEY", null);
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify
+        verify(service).statusFailure("TEST_KEY", container);
+        // Should handle null container without throwing exception
+    }
+    
+    @Test
+    public void testLoggingBehavior() {
+        // Setup valid container
+        AllocContainer container = mock(AllocContainer.class);
+        when(container.hasOnlyAvg()).thenReturn(false);
+        when(container.hasSamePriceQty(5)).thenReturn(true);
+        
+        testData.put("TEST_KEY", container);
+        
+        // Execute
+        service.processByReplayPartialGroups();
+        
+        // Verify logging
+        verify(service.getLogger()).info("Start processByReplayPartialGroups()");
+        verify(service.getLogger()).info(contains("REPLAY FILL SQL query="));
+        verify(service.getLogger()).info("Start updating match status N to RTS.");
+        verify(service.getLogger()).info("Completed processByReplayPartialGroups()");
+    }
+}
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
