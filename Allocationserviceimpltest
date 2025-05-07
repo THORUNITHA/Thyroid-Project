@@ -1,3 +1,167 @@
+ import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.xml.bind.PropertyException;
+
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlApsExchangeConnectorServiceImplTest {
+
+    @Mock
+    private TClearhouseMasterDao tClearhouseMasterDao;
+    
+    @Mock
+    private SqlRowSet rowSet;
+    
+    @Mock
+    private SqlRowSet rowSetAvg;
+    
+    @InjectMocks
+    private TmlApsExchangeConnectorServiceImpl service;
+    
+    private List<TClearhouseMaster> mockMasterList;
+    private TClearhouseMaster mockMaster;
+    
+    @Before
+    public void setUp() {
+        mockMaster = new TClearhouseMaster();
+        mockMaster.setId(123L);
+        mockMaster.setExchangeCdC("EXCH1");
+        mockMaster.setApsGroupIdC("GROUP1");
+        
+        mockMasterList = new ArrayList<>();
+        mockMasterList.add(mockMaster);
+    }
+
+    @Test
+    public void testProcessToCompleteApsGroup_HappyPath() throws Exception {
+        // Mock rowset with data
+        when(rowSet.next()).thenReturn(true).thenReturn(false);
+        when(rowSet.getString("EXCHANGE_CD_C")).thenReturn("EXCH1");
+        when(rowSet.getString("APS_GROUP_ID_C")).thenReturn("GROUP1");
+        when(rowSet.getLong("LOTS")).thenReturn(100L);
+        
+        // Mock DAO responses
+        when(tClearhouseMasterDao.qtyByGroup()).thenReturn(rowSet);
+        when(tClearhouseMasterDao.listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString()))
+            .thenReturn(mockMasterList);
+        when(tClearhouseMasterDao.getClientName(anyString())).thenReturn("VALID_CLIENT");
+        
+        // Mock average price response
+        when(rowSetAvg.next()).thenReturn(true).thenReturn(false);
+        when(rowSetAvg.getBigDecimal("AVERAGE_PRICE_D")).thenReturn(new BigDecimal("100.50"));
+        when(tClearhouseMasterDao.getAvgPriceGroupCompletion(anyString(), anyLong())).thenReturn(rowSetAvg);
+        
+        // Execute
+        service.processToCompleteApsGroup();
+        
+        // Verify interactions
+        verify(tClearhouseMasterDao).completeApsGroup("EXCH1", "GROUP1");
+        verify(tClearhouseMasterDao).updateGenericAvgPriceList(any(BigDecimal.class), eq("GROUP1"));
+    }
+
+    @Test
+    public void testProcessToCompleteApsGroup_EmptyClientName() throws Exception {
+        // Mock rowset with data
+        when(rowSet.next()).thenReturn(true).thenReturn(false);
+        when(rowSet.getString("EXCHANGE_CD_C")).thenReturn("EXCH1");
+        when(rowSet.getString("APS_GROUP_ID_C")).thenReturn("GROUP1");
+        when(rowSet.getLong("LOTS")).thenReturn(100L);
+        
+        // Mock DAO responses with empty client name
+        when(tClearhouseMasterDao.qtyByGroup()).thenReturn(rowSet);
+        when(tClearhouseMasterDao.listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString()))
+            .thenReturn(mockMasterList);
+        when(tClearhouseMasterDao.getClientName(anyString())).thenReturn("");
+        
+        // Execute
+        service.processToCompleteApsGroup();
+        
+        // Verify no message was sent
+        verify(tClearhouseMasterDao, never()).updateGenericAvgPriceList(any(), any());
+    }
+
+    @Test
+    public void testProcessToCompleteApsGroup_NullClientName() throws Exception {
+        // Mock rowset with data
+        when(rowSet.next()).thenReturn(true).thenReturn(false);
+        when(rowSet.getString("EXCHANGE_CD_C")).thenReturn("EXCH1");
+        when(rowSet.getString("APS_GROUP_ID_C")).thenReturn("GROUP1");
+        when(rowSet.getLong("LOTS")).thenReturn(100L);
+        
+        // Mock DAO responses with null client name
+        when(tClearhouseMasterDao.qtyByGroup()).thenReturn(rowSet);
+        when(tClearhouseMasterDao.listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString()))
+            .thenReturn(mockMasterList);
+        when(tClearhouseMasterDao.getClientName(anyString())).thenReturn(null);
+        
+        // Execute
+        service.processToCompleteApsGroup();
+        
+        // Verify no message was sent
+        verify(tClearhouseMasterDao, never()).updateGenericAvgPriceList(any(), any());
+    }
+
+    @Test
+    public void testProcessToCompleteApsGroup_ClientInExclusionList() throws Exception {
+        // Set up exclusion list
+        service.avgNotReqString = "EXCLUDED_CLIENT,ANOTHER_CLIENT";
+        
+        // Mock rowset with data
+        when(rowSet.next()).thenReturn(true).thenReturn(false);
+        when(rowSet.getString("EXCHANGE_CD_C")).thenReturn("EXCH1");
+        when(rowSet.getString("APS_GROUP_ID_C")).thenReturn("GROUP1");
+        when(rowSet.getLong("LOTS")).thenReturn(100L);
+        
+        // Mock DAO responses with excluded client
+        when(tClearhouseMasterDao.qtyByGroup()).thenReturn(rowSet);
+        when(tClearhouseMasterDao.listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString()))
+            .thenReturn(mockMasterList);
+        when(tClearhouseMasterDao.getClientName(anyString())).thenReturn("EXCLUDED_CLIENT");
+        
+        // Execute
+        service.processToCompleteApsGroup();
+        
+        // Verify no message was sent
+        verify(tClearhouseMasterDao, never()).updateGenericAvgPriceList(any(), any());
+    }
+
+    @Test
+    public void testProcessToCompleteApsGroup_EmptyMasterList() throws Exception {
+        // Mock rowset with data
+        when(rowSet.next()).thenReturn(true).thenReturn(false);
+        when(rowSet.getString("EXCHANGE_CD_C")).thenReturn("EXCH1");
+        when(rowSet.getString("APS_GROUP_ID_C")).thenReturn("GROUP1");
+        when(rowSet.getLong("LOTS")).thenReturn(100L);
+        
+        // Mock empty master list
+        when(tClearhouseMasterDao.qtyByGroup()).thenReturn(rowSet);
+        when(tClearhouseMasterDao.listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString()))
+            .thenReturn(new ArrayList<>());
+        
+        // Execute
+        service.processToCompleteApsGroup();
+        
+        // Verify no interactions with message sending
+        verify(tClearhouseMasterDao, never()).updateGenericAvgPriceList(any(), any());
+    }
+}
+
+
+
 import org.springframework.test.util.ReflectionTestUtils;
 
 @Test
