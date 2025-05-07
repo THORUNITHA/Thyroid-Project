@@ -1,6 +1,182 @@
  import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.jms.JMSException;
+import javax.xml.bind.JAXBException;
+
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.log4j.Logger;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
+
+import com.baml.tml.tmlbase.trade.clearhouse.fixml.Fixml;
+import com.baml.tml.tmlbase.trade.persistence.dao.TClearhouseMaster;
+import com.baml.tml.tmlbase.trade.persistence.dao.TClearhouseMasterDao;
+import com.baml.tml.tmlbase.trade.util.FileMessage;
+import com.baml.tml.tmlbase.trade.util.TmlMqMessageWriter;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlApsExchangeConnectorServiceImplTest {
+
+    @Mock
+    private TClearhouseMasterDao tClearhouseMasterDao;
+    
+    @Mock
+    private TmlMqMessageWriter tmlMqMessageWriter;
+    
+    @Mock
+    private FileMessage fileMessage;
+    
+    @Mock
+    private Map<String, String> outBoundQueues;
+    
+    @Mock
+    private Logger log;
+    
+    @InjectMocks
+    private TmlApsExchangeConnectorServiceImpl service;
+    
+    private TClearhouseMaster mockMaster;
+    private List<TClearhouseMaster> mockList;
+    
+    @Before
+    public void setUp() {
+        mockMaster = new TClearhouseMaster();
+        mockMaster.setId(123L);
+        mockMaster.setExchangeCdC("EXCH1");
+        mockMaster.setDestIdC("DEST1");
+        mockMaster.setApsGroupIdC("GROUP1");
+        
+        mockList = new ArrayList<>();
+        mockList.add(mockMaster);
+    }
+
+    @Test
+    public void testProcessMatchedMsgs_EmptyList() throws JAXBException, JMSException {
+        when(tClearhouseMasterDao.listClearHouseMaster()).thenReturn(new ArrayList<>());
+        
+        service.processMatchedMsgs();
+        
+        verify(tClearhouseMasterDao).listClearHouseMaster();
+        verifyNoMoreInteractions(tClearhouseMasterDao, tmlMqMessageWriter, fileMessage);
+    }
+
+    @Test
+    public void testProcessMatchedMsgs_WithRecords() throws JAXBException, JMSException {
+        when(tClearhouseMasterDao.listClearHouseMaster()).thenReturn(mockList);
+        when(outBoundQueues.get(anyString())).thenReturn("TEST.QUEUE");
+        
+        service.processMatchedMsgs();
+        
+        verify(tClearhouseMasterDao).listClearHouseMaster();
+        verify(tClearhouseMasterDao).updateMatchedStatus(anyList(), eq("S"));
+        verify(fileMessage).writeMessageToFile(anyString());
+        verify(tmlMqMessageWriter).sendMessage(anyString(), anyString());
+    }
+
+    @Test
+    public void testProcessToCompleteApsGroup() throws PropertyException, JAXBException, JMSException {
+        SqlRowSet mockRowSet = mock(SqlRowSet.class);
+        when(mockRowSet.next()).thenReturn(true).thenReturn(false);
+        when(mockRowSet.getString("EXCHANGE_CD_C")).thenReturn("EXCH1");
+        when(mockRowSet.getString("APS_GROUP_ID_C")).thenReturn("GROUP1");
+        when(mockRowSet.getLong("LOTS")).thenReturn(100L);
+        
+        when(tClearhouseMasterDao.qtyByGroup()).thenReturn(mockRowSet);
+        when(tClearhouseMasterDao.listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString()))
+            .thenReturn(mockList);
+        when(tClearhouseMasterDao.getClientName(anyString())).thenReturn("CLIENT1");
+        when(outBoundQueues.get(anyString())).thenReturn("TEST.QUEUE");
+        
+        SqlRowSet mockAvgRowSet = mock(SqlRowSet.class);
+        when(mockAvgRowSet.next()).thenReturn(true).thenReturn(false);
+        when(mockAvgRowSet.getBigDecimal("AVERAGE_PRICE_D")).thenReturn(new BigDecimal("100.50"));
+        when(tClearhouseMasterDao.getAvgPriceGroupCompletion(anyString(), anyLong())).thenReturn(mockAvgRowSet);
+        
+        service.processToCompleteApsGroup();
+        
+        verify(tClearhouseMasterDao).qtyByGroup();
+        verify(tClearhouseMasterDao).listMatchedHQLApsGroupClearHouseMaster(anyString(), anyLong(), anyString());
+        verify(tClearhouseMasterDao).getClientName(anyString());
+        verify(tClearhouseMasterDao).getAvgPriceGroupCompletion(anyString(), anyLong());
+        verify(tClearhouseMasterDao).updateGenericAvgPriceList(any(BigDecimal.class), anyString());
+        verify(tClearhouseMasterDao).completeApsGroup(anyString(), anyString());
+        verify(fileMessage).writeMessageToFile(anyString());
+        verify(tmlMqMessageWriter).sendMessage(anyString(), anyString());
+    }
+
+    @Test
+    public void testGetQ_WithDestId() {
+        TClearhouseMaster master = new TClearhouseMaster();
+        master.setExchangeCdC("IFUS");
+        master.setDestIdC("DEST1");
+        
+        Map<String, String> queues = new HashMap<>();
+        queues.put("IFUS.DEST1", "TEST.QUEUE");
+        service.outBoundQueues = queues;
+        
+        String result = service.getQ(master);
+        assertEquals("TEST.QUEUE", result);
+    }
+
+    @Test
+    public void testGetQ_WithoutDestId() {
+        TClearhouseMaster master = new TClearhouseMaster();
+        master.setExchangeCdC("EXCH1");
+        
+        Map<String, String> queues = new HashMap<>();
+        queues.put("EXCH1", "TEST.QUEUE");
+        service.outBoundQueues = queues;
+        
+        String result = service.getQ(master);
+        assertEquals("TEST.QUEUE", result);
+    }
+
+    @Test
+    public void testGetQ_NoQueueConfigured() {
+        TClearhouseMaster master = new TClearhouseMaster();
+        master.setExchangeCdC("UNKNOWN");
+        
+        Map<String, String> queues = new HashMap<>();
+        service.outBoundQueues = queues;
+        
+        String result = service.getQ(master);
+        assertNull(result);
+    }
+
+    @Test
+    public void testUpdateStatus() {
+        List<Long> ids = Arrays.asList(1L, 2L, 3L);
+        service.updateStatus(ids, "S");
+        verify(tClearhouseMasterDao).updateMatchedStatus(ids, "S");
+    }
+
+    @Test
+    public void testWriteMsgToExchange() throws JMSException {
+        when(outBoundQueues.get(anyString())).thenReturn("TEST.QUEUE");
+        
+        service.writeMsgToExchange(mockMaster, "<test>message</test>");
+        
+        verify(fileMessage).writeMessageToFile(anyString());
+        verify(tmlMqMessageWriter).sendMessage(anyString(), anyString());
+    }
+}
+
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
 import java.util.*;
 import java.sql.SQLException;
 
