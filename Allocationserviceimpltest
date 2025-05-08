@@ -4,6 +4,70 @@ public class TmlOnExchangeApsServiceImplTest {
     @InjectMocks
     private TmlOnExchangeApsServiceImpl service;
 
+    @Before
+    public void setUp() {
+        // Set private fields if needed
+        ReflectionTestUtils.setField(service, "cmeGroup", Collections.singleton("CME"));
+        ReflectionTestUtils.setField(service, "iceUs", Collections.singleton("ICE"));
+    }
+
+    @Test
+    public void testCheckForEachFill_cmeGroup_matchFound() throws Exception {
+        // Prepare a fill
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setQuantityI(10);
+        alloc.setPriceD(new BigDecimal("99.5"));
+        alloc.setGmiExchCdC("CME");
+        alloc.setTonIdC("XYZTN987654");
+
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACCT123");
+
+        // Spy the service
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+
+        // ======= MOCK getGmiParams (protected method) ========
+        Map<String, Object> dummyParams = new HashMap<>();
+        dummyParams.put("key", "value");
+        doReturn(dummyParams).when(spyService).getGmiParams(any(), any(), any(), any());
+
+        // ======= MOCK getClearHouseFeed (assume it's public/protected) ========
+        TClearhouseMaster chMaster = new TClearhouseMaster();
+        chMaster.setId(999L);
+        chMaster.setLastQuantityI(10);
+        chMaster.setTradePriceD(new BigDecimal("99.5"));
+        chMaster.setExecIDC("TN987654");
+
+        doReturn(Collections.singletonList(chMaster)).when(spyService).getClearHouseFeed(anyString(), anyMap());
+
+        // ======= FORCE isBamlExecFirm (private method) to return true =======
+        Method method = TmlOnExchangeApsServiceImpl.class.getDeclaredMethod("isBamlExecFirm", TAllocationGenericId.class);
+        method.setAccessible(true);
+
+        // Monkey patch it by replacing the method logic: override via ReflectionTestUtils
+        TmlOnExchangeApsServiceImpl spyWithMockedPrivate = Mockito.spy(spyService);
+        Mockito.doReturn(true).when(spyWithMockedPrivate, "isBamlExecFirm", any(TAllocationGenericId.class));
+
+        // Call the method under test
+        boolean result = ReflectionTestUtils.invokeMethod(spyWithMockedPrivate,
+                "checkForEachFill", fills, chMsgs, accounts);
+
+        // Verify output
+        assertTrue(result);
+        assertEquals(1, chMsgs.size());
+        assertTrue(fills.get(0).isMatchFound());
+    }
+}
+
+
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+
     @Mock
     private Logger log;
 
