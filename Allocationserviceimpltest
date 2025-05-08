@@ -1,5 +1,132 @@
  import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
+import java.util.*;
+import org.apache.commons.collections4.CollectionUtils;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+
+@RunWith(MockitoJUnitRunner.class)
+public class FillCheckerTest {
+
+    @Mock
+    private Logger log;
+    
+    @InjectMocks
+    private YourServiceClass service; // Replace with actual class name
+    
+    private List<TAllocationGenericId> fills;
+    private List<TClearhouseMaster> chMsgs;
+    private List<String> accounts;
+    private TAllocationGenericId alloc;
+    private TClearhouseMaster chMaster;
+    
+    @Before
+    public void setUp() {
+        fills = new ArrayList<>();
+        chMsgs = new ArrayList<>();
+        accounts = Arrays.asList("ACC1", "ACC2");
+        
+        alloc = new TAllocationGenericId();
+        alloc.setQuantityI(100);
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setGmiExchCdC("CME");
+        alloc.setTonIdC("PRE123TN456");
+        alloc.setExchangeTradeIdC("TRADE123");
+        fills.add(alloc);
+        
+        chMaster = new TClearhouseMaster();
+        chMaster.setId(1L);
+        chMaster.setLastQuantityI(100);
+        chMaster.setTradePriceD(new BigDecimal("100.50"));
+        chMaster.setExecIdC("TN456");
+        chMaster.setTradeIdC("TRADE123");
+    }
+
+    @Test
+    public void testCheckForEachFill_CoverAllBranches() {
+        // Test 1: Null/empty fills
+        assertFalse(service.checkForEachFill(null, chMsgs, accounts));
+        assertFalse(service.checkForEachFill(new ArrayList<>(), chMsgs, accounts));
+        
+        // Test 2: Successful match with CME TON ID (BAML executed firm)
+        when(service.isBamlExecFirm(any())).thenReturn(true);
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(Arrays.asList(chMaster));
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        assertEquals(1, chMsgs.size());
+        verify(log).info("Matchig with CME TON ID data with trade price and BAML executed firm");
+        
+        // Test 3: Successful match with CME Trade ID (non-BAML executed firm)
+        alloc.setTonIdC(null);
+        when(service.isBamlExecFirm(any())).thenReturn(false);
+        chMsgs.clear();
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        verify(log).info("Matchig with CME TRADE ID data with avg price");
+        
+        // Test 4: ICE exchange match
+        alloc.setGmiExchCdC("ICE");
+        alloc.setTonIdC("ICETON123");
+        alloc.setExchangeTradeIdC(null);
+        chMaster.setExecIdC("ICETON123");
+        chMsgs.clear();
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        verify(log).info("Matchig with ICE TON data with avg price");
+        
+        // Test 5: No TON/Trade ID match (fallback to price/quantity)
+        alloc.setTonIdC(null);
+        alloc.setExchangeTradeIdC(null);
+        chMsgs.clear();
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        verify(log).info("NO TON and TRADE ID for this, matching with price and quantity only");
+        
+        // Test 6: No matching clear house feed
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(new ArrayList<>());
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+        
+        // Test 7: Partial match (not all fills matched)
+        TAllocationGenericId alloc2 = new TAllocationGenericId();
+        alloc2.setQuantityI(200);
+        alloc2.setPriceD(new BigDecimal("200.50"));
+        fills.add(alloc2);
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+    }
+
+    @Test
+    public void testCheckForEachFill_EdgeCases() {
+        // Test 1: Empty accounts list
+        assertFalse(service.checkForEachFill(fills, chMsgs, new ArrayList<>()));
+        
+        // Test 2: Different quantity/price
+        chMaster.setLastQuantityI(99);
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(Arrays.asList(chMaster));
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+        
+        // Test 3: Already matched ID
+        List<Long> idIL = new ArrayList<>();
+        idIL.add(1L);
+        when(service.getGmiParams(any(), any(), any(), any()))
+            .thenReturn(Collections.singletonMap("ID_I", idIL));
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+    }
+}
+
+
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
