@@ -1,3 +1,98 @@
+  import org.junit.Before;
+import org.junit.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.runner.RunWith;
+
+import java.util.*;
+
+import static org.junit.Assert.*;
+
+@RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @InjectMocks
+    @Spy
+    private TmlOnExchangeApsServiceImpl service;
+
+    private TAllocationGenericId alloc;
+    private AllocContainer container;
+
+    @Before
+    public void setUp() {
+        // Setup exchange group sets
+        Set<String> cmeGroup = new HashSet<>(Arrays.asList("CME1", "CME2"));
+        Set<String> iceUs = new HashSet<>(Collections.singletonList("ICE1"));
+
+        // Inject test exchange sets via reflection
+        ReflectionTestUtils.setField(service, "cmeGroup", cmeGroup);
+        ReflectionTestUtils.setField(service, "iceus", iceUs);
+
+        // Allocation setup
+        alloc = new TAllocationGenericId();
+        alloc.setGmiExchCdC("CME1");
+
+        // Container setup
+        container = new AllocContainer();
+        container.setFills(Arrays.asList(alloc));
+    }
+
+    @Test
+    public void testIsCmeGroupFromContainer_true() {
+        assertTrue(service.isCmeGroup(container));
+    }
+
+    @Test
+    public void testIsCmeGroupFromContainer_false_emptyFills() {
+        container.setFills(new ArrayList<>());
+        assertFalse(service.isCmeGroup(container));
+    }
+
+    @Test
+    public void testIsCmeGroupFromAlloc_true() {
+        alloc.setGmiExchCdC("CME2");
+        assertTrue(service.isCmeGroup(alloc));
+    }
+
+    @Test
+    public void testIsCmeGroupFromAlloc_false() {
+        alloc.setGmiExchCdC("OTHER");
+        assertFalse(service.isCmeGroup(alloc));
+    }
+
+    @Test
+    public void testGetStatusUpdateFlagForFills_trueForCME() {
+        alloc.setGmiExchCdC("CME1");
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        assertTrue(ReflectionTestUtils.invokeMethod(service, "getStatusUpdateFlagForFills", fills));
+    }
+
+    @Test
+    public void testGetStatusUpdateFlagForFills_trueForICE() {
+        alloc.setGmiExchCdC("ICE1");
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        assertTrue(ReflectionTestUtils.invokeMethod(service, "getStatusUpdateFlagForFills", fills));
+    }
+
+    @Test
+    public void testGetStatusUpdateFlagForFills_falseForOtherExchange() {
+        alloc.setGmiExchCdC("OTHER");
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        assertFalse(ReflectionTestUtils.invokeMethod(service, "getStatusUpdateFlagForFills", fills));
+    }
+
+    @Test
+    public void testGetStatusUpdateFlagForFills_nullOrEmptyFills() {
+        assertFalse(ReflectionTestUtils.invokeMethod(service, "getStatusUpdateFlagForFills", new ArrayList<>()));
+    }
+}
+
+
+
+
+
+
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 import java.util.*;
