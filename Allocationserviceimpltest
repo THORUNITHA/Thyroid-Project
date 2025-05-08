@@ -1,4 +1,75 @@
-  @RunWith(MockitoJUnitRunner.class)
+ @RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    // Testable subclass to override protected/private methods
+    public static class TestableTmlOnExchangeApsServiceImpl extends TmlOnExchangeApsServiceImpl {
+        private boolean bamlExecReturn = false;
+
+        public void setIsBamlExecFirmReturn(boolean value) {
+            this.bamlExecReturn = value;
+        }
+
+        @Override
+        protected Map<String, Object> getGmiParams(TAllocationGenericId alloc, List<String> accounts, List<Long> idIL, List<String> execFirmL) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("key", "val");
+            return map;
+        }
+
+        // Expose private method through a public stub
+        public boolean callIsBamlExecFirm(TAllocationGenericId alloc) {
+            return bamlExecReturn;
+        }
+    }
+
+    @Spy
+    private TestableTmlOnExchangeApsServiceImpl service;
+
+    @Before
+    public void setUp() {
+        ReflectionTestUtils.setField(service, "cmeGroup", new HashSet<>(Arrays.asList("CME")));
+        ReflectionTestUtils.setField(service, "iceUs", new HashSet<>(Arrays.asList("ICE")));
+    }
+
+    @Test
+    public void testCheckForEachFill_BamlExecFirmMatchFound() {
+        // Setup input
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setQuantityI(100);
+        alloc.setPriceD(new BigDecimal("99.5"));
+        alloc.setGmiExchCdC("CME");
+        alloc.setTonIdC("ABCXTN123456");
+
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACC1");
+
+        // Mock private method result using public override
+        service.setIsBamlExecFirmReturn(true);
+
+        // Mock getClearHouseFeed
+        TClearhouseMaster chMaster = new TClearhouseMaster();
+        chMaster.setId(1001L);
+        chMaster.setLastQuantityI(100);
+        chMaster.setTradePriceD(new BigDecimal("99.5"));
+        chMaster.setExecIDC("TN123456");
+
+        doReturn(Arrays.asList(chMaster)).when(service).getClearHouseFeed(anyString(), anyMap());
+
+        // Call real method
+        boolean result = service.checkForEachFill(fills, chMsgs, accounts);
+
+        // Assertions
+        assertTrue(result);
+        assertEquals(1, chMsgs.size());
+        assertTrue(fills.get(0).isMatchFound());
+    }
+}
+
+
+
+
+@RunWith(MockitoJUnitRunner.class)
 public class TmlOnExchangeApsServiceImplTest {
 
     @InjectMocks
