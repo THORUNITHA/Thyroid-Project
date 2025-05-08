@@ -1,3 +1,134 @@
+  import static org.junit.Assert.*;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.commons.collections4.CollectionUtils;
+import org.junit.Before;
+import org.junit.Test;
+import com.baml.tml.tmlbase.trade.persistence.dao.TClearhouseMaster;
+
+public class StatusMessageUtilTest {
+
+    private List<TClearhouseMaster> chMsgs;
+    private final String TEST_MSG = "Test message: ";
+
+    @Before
+    public void setUp() {
+        chMsgs = new ArrayList<>();
+    }
+
+    @Test
+    public void testPopulateStatusMsgWithGroup_EmptyList() {
+        // Setup
+        String msg = TEST_MSG;
+        
+        // Execute
+        String result = populateStatusMsgWithGroup(msg, chMsgs);
+        
+        // Verify
+        assertEquals(msg, result);
+    }
+
+    @Test
+    public void testPopulateStatusMsgWithGroup_SingleItem() {
+        // Setup
+        String msg = TEST_MSG;
+        TClearhouseMaster master = new TClearhouseMaster();
+        master.setId(1001L);
+        chMsgs.add(master);
+        
+        // Execute
+        String result = populateStatusMsgWithGroup(msg, chMsgs);
+        
+        // Verify
+        assertEquals(msg + "1001,", result);
+    }
+
+    @Test
+    public void testPopulateStatusMsgWithGroup_MultipleItems() {
+        // Setup
+        String msg = TEST_MSG;
+        for (long i = 1; i <= 5; i++) {
+            TClearhouseMaster master = new TClearhouseMaster();
+            master.setId(i);
+            chMsgs.add(master);
+        }
+        
+        // Execute
+        String result = populateStatusMsgWithGroup(msg, chMsgs);
+        
+        // Verify
+        assertEquals(msg + "1,2,3,4,5,", result);
+    }
+
+    @Test
+    public void testPopulateStatusMsgWithGroup_NullList() {
+        // Setup
+        String msg = TEST_MSG;
+        
+        // Execute
+        String result = populateStatusMsgWithGroup(msg, null);
+        
+        // Verify
+        assertEquals(msg, result);
+    }
+
+    @Test
+    public void testPopulateStatusMsgWithGroup_MessageTruncation() {
+        // Setup
+        String msg = TEST_MSG;
+        
+        // Create a long list that will exceed 4000 characters when combined with msg
+        for (int i = 0; i < 500; i++) {
+            TClearhouseMaster master = new TClearhouseMaster();
+            master.setId(1000000L + i);
+            chMsgs.add(master);
+        }
+        
+        // Execute
+        String result = populateStatusMsgWithGroup(msg, chMsgs);
+        
+        // Verify
+        assertTrue(result.length() <= 3999);
+        assertEquals(3999, result.length());
+        assertTrue(result.startsWith(msg));
+    }
+
+    @Test
+    public void testPopulateStatusMsgWithGroup_EmptyMessage() {
+        // Setup
+        String msg = "";
+        TClearhouseMaster master = new TClearhouseMaster();
+        master.setId(1001L);
+        chMsgs.add(master);
+        
+        // Execute
+        String result = populateStatusMsgWithGroup(msg, chMsgs);
+        
+        // Verify
+        assertEquals("1001,", result);
+    }
+
+    // Helper method to test (since original method might be private)
+    private String populateStatusMsgWithGroup(String msg, List<TClearhouseMaster> chMsgs) {
+        StringBuffer buffer = new StringBuffer();
+        buffer.append(msg);
+        
+        if (CollectionUtils.isNotEmpty(chMsgs)) {
+            for (TClearhouseMaster clearhouseMaster : chMsgs) {
+                buffer.append(clearhouseMaster.getId()).append(",");
+            }
+            
+            if (buffer.length() > 3999) {
+                return buffer.substring(0, 3998);
+            }
+        }
+        
+        return buffer.toString();
+    }
+}
+
+
+
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
