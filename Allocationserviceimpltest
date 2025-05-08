@@ -1,4 +1,88 @@
- @RunWith(MockitoJUnitRunner.class)
+  @RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+
+    @Before
+    public void setUp() {
+        // Set internal collections if used
+        ReflectionTestUtils.setField(service, "cmeGroup", new HashSet<>(Arrays.asList("CME")));
+        ReflectionTestUtils.setField(service, "iceUs", new HashSet<>(Arrays.asList("ICE")));
+    }
+
+    @Test
+    public void testCheckForEachFill_withBamlExecFirm() throws Exception {
+        // Input: Fills
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setQuantityI(100);
+        alloc.setPriceD(new BigDecimal("105.5"));
+        alloc.setGmiExchCdC("CME");
+        alloc.setTonIdC("XXXXXTN987654");
+
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACCT1");
+
+        // Spy the class to override protected + private behavior
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+
+        // Mock protected method: getGmiParams
+        Map<String, Object> dummyParams = new HashMap<>();
+        dummyParams.put("key", "val");
+        doReturn(dummyParams).when(spyService).getGmiParams(any(), any(), any(), any());
+
+        // Mock method getClearHouseFeed
+        TClearhouseMaster chMaster = new TClearhouseMaster();
+        chMaster.setId(999L);
+        chMaster.setLastQuantityI(100);
+        chMaster.setTradePriceD(new BigDecimal("105.5"));
+        chMaster.setExecIDC("TN987654");
+        doReturn(Arrays.asList(chMaster)).when(spyService).getClearHouseFeed(anyString(), anyMap());
+
+        // Use Reflection to stub the private method isBamlExecFirm
+        Method method = TmlOnExchangeApsServiceImpl.class.getDeclaredMethod("isBamlExecFirm", TAllocationGenericId.class);
+        method.setAccessible(true);
+
+        // Wrap original spy to override private method using doAnswer
+        TmlOnExchangeApsServiceImpl finalSpy = Mockito.mock(TmlOnExchangeApsServiceImpl.class, withSettings()
+                .useConstructor()
+                .defaultAnswer(CALLS_REAL_METHODS));
+
+        // Set required fields in finalSpy
+        ReflectionTestUtils.setField(finalSpy, "cmeGroup", new HashSet<>(Arrays.asList("CME")));
+        ReflectionTestUtils.setField(finalSpy, "iceUs", new HashSet<>(Arrays.asList("ICE")));
+
+        // Mock protected method on finalSpy
+        doReturn(dummyParams).when(finalSpy).getGmiParams(any(), any(), any(), any());
+
+        // Mock private method using doAnswer + reflection
+        doAnswer(invocation -> true) // Return true from isBamlExecFirm
+                .when(finalSpy, "isBamlExecFirm", any(TAllocationGenericId.class));
+
+        // Mock public method getClearHouseFeed again
+        doReturn(Arrays.asList(chMaster)).when(finalSpy).getClearHouseFeed(anyString(), anyMap());
+
+        // Run actual test
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(
+                finalSpy,
+                "checkForEachFill",
+                fills,
+                chMsgs,
+                accounts
+        );
+
+        // Assert
+        assertTrue(result);
+        assertEquals(1, chMsgs.size());
+        assertTrue(fills.get(0).isMatchFound());
+    }
+}
+
+
+
+
+@RunWith(MockitoJUnitRunner.class)
 public class TmlOnExchangeApsServiceImplTest {
 
     @InjectMocks
