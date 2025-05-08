@@ -1,4 +1,160 @@
-  @RunWith(MockitoJUnitRunner.class)
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+import java.util.*;
+import org.apache.commons.collections4.CollectionUtils;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@RunWith(MockitoJUnitRunner.class)
+public class CheckForEachFillTest {
+
+    @Spy
+    @InjectMocks
+    private YourServiceClass service;
+    
+    @Mock
+    private Logger log;
+    
+    private List<TAllocationGenericId> fills;
+    private List<TClearhouseMaster> chMsgs;
+    private List<String> accounts;
+    private TAllocationGenericId alloc;
+    private TClearhouseMaster chMaster;
+    
+    @Before
+    public void setUp() throws Exception {
+        fills = new ArrayList<>();
+        chMsgs = new ArrayList<>();
+        accounts = Arrays.asList("ACC1", "ACC2");
+        
+        // Setup test allocation
+        alloc = new TAllocationGenericId();
+        alloc.setQuantityI(100);
+        alloc.setPriceD(new BigDecimal("100.50"));
+        alloc.setGmiExchCdC("CME");
+        alloc.setTonIdC("PRE123TN456");
+        alloc.setExchangeTradeIdC("TRADE123");
+        alloc.setExecutingFirmC("BAML");
+        fills.add(alloc);
+        
+        // Setup test clear house master
+        chMaster = new TClearhouseMaster();
+        chMaster.setId(1L);
+        chMaster.setLastQuantityI(100);
+        chMaster.setTradePriceD(new BigDecimal("100.50"));
+        chMaster.setExecIdC("TN456");
+        chMaster.setTradeIdC("TRADE123");
+        
+        // Mock protected method
+        doReturn(new HashMap<>()).when(service).getGmiParams(
+            any(TAllocationGenericId.class), 
+            anyList(), 
+            anyList(), 
+            anyList());
+        
+        // Mock private method using reflection
+        Method isBamlExecFirm = YourServiceClass.class
+            .getDeclaredMethod("isBamlExecFirm", TAllocationGenericId.class);
+        isBamlExecFirm.setAccessible(true);
+        doReturn(true).when(service, isBamlExecFirm).invoke(any());
+    }
+
+    @Test
+    public void testCheckForEachFill_AllBranches() {
+        // Test 1: Null/empty fills
+        assertFalse(service.checkForEachFill(null, chMsgs, accounts));
+        assertFalse(service.checkForEachFill(new ArrayList<>(), chMsgs, accounts));
+        
+        // Test 2: Successful CME TON ID match (BAML executed)
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(Collections.singletonList(chMaster));
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        assertEquals(1, chMsgs.size());
+        verify(log).info("Matchig with CME TON ID data with trade price and BAML executed firm");
+        
+        // Test 3: CME Trade ID match (non-BAML)
+        ReflectionTestUtils.setField(service, "bamlFirms", Set.of("OTHER"));
+        alloc.setTonIdC(null);
+        chMsgs.clear();
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        verify(log).info("Matchig with CME TRADE ID data with avg price");
+        
+        // Test 4: ICE exchange match
+        alloc.setGmiExchCdC("ICE");
+        alloc.setTonIdC("ICETON123");
+        alloc.setExchangeTradeIdC(null);
+        chMaster.setExecIdC("ICETON123");
+        chMsgs.clear();
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        verify(log).info("Matchig with ICE TON data with avg price");
+        
+        // Test 5: Fallback to price/quantity match
+        alloc.setTonIdC(null);
+        alloc.setExchangeTradeIdC(null);
+        chMsgs.clear();
+        
+        assertTrue(service.checkForEachFill(fills, chMsgs, accounts));
+        verify(log).info("NO TON and TRADE ID for this, matching with price and quantity only");
+        
+        // Test 6: No clear house matches
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(new ArrayList<>());
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+        
+        // Test 7: Partial match failure
+        TAllocationGenericId alloc2 = new TAllocationGenericId();
+        alloc2.setQuantityI(200);
+        fills.add(alloc2);
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(Collections.singletonList(chMaster));
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+    }
+
+    @Test
+    public void testCheckForEachFill_EdgeCases() {
+        // Test 1: Already matched ID
+        List<Long> idIL = new ArrayList<>();
+        idIL.add(1L);
+        doReturn(Collections.singletonMap("ID_I", idIL))
+            .when(service).getGmiParams(any(), any(), any(), any());
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+        
+        // Test 2: Quantity mismatch
+        chMaster.setLastQuantityI(99);
+        when(service.getClearHouseFeed(anyString(), anyMap()))
+            .thenReturn(Collections.singletonList(chMaster));
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+        
+        // Test 3: Price mismatch
+        chMaster.setLastQuantityI(100);
+        chMaster.setTradePriceD(new BigDecimal("99.50"));
+        
+        assertFalse(service.checkForEachFill(fills, chMsgs, accounts));
+    }
+}
+class TestableService extends YourServiceClass {
+    @Override
+    protected boolean isBamlExecFirm(TAllocationGenericId alloc) {
+        return "BAML".equals(alloc.getExecutingFirmC());
+    }
+}
+
+
+
+@RunWith(MockitoJUnitRunner.class)
 public class TmlOnExchangeApsServiceImplTest {
 
     // Create a subclass that overrides the protected method
