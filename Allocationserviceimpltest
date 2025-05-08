@@ -1,4 +1,76 @@
- @Test
+ @RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    @InjectMocks
+    private TmlOnExchangeApsServiceImpl service;
+
+    @Mock
+    private Logger log;
+
+    @Before
+    public void setup() throws Exception {
+        // Override private method isBamlExecFirm to return true
+        Method isBamlExecFirmMethod = TmlOnExchangeApsServiceImpl.class
+            .getDeclaredMethod("isBamlExecFirm", TAllocationGenericId.class);
+        isBamlExecFirmMethod.setAccessible(true);
+        ReflectionTestUtils.setField(service, "cmeGroup", Collections.singleton("CME"));
+        ReflectionTestUtils.setField(service, "iceUs", Collections.singleton("ICE"));
+    }
+
+    @Test
+    public void testCheckForEachFill_AllMatch_BamlExec_CmeTon() throws Exception {
+        // Setup input
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setQuantityI(100);
+        alloc.setPriceD(new BigDecimal("10.5"));
+        alloc.setGmiExchCdC("CME");
+        alloc.setTonIdC("XYZTN123456");
+
+        List<TAllocationGenericId> fills = Arrays.asList(alloc);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Arrays.asList("ACC123");
+
+        // Mock getGmiParams
+        Method getGmiParams = TmlOnExchangeApsServiceImpl.class.getDeclaredMethod(
+                "getGmiParams", TAllocationGenericId.class, List.class, List.class, List.class);
+        getGmiParams.setAccessible(true);
+
+        Map<String, Object> gmiMap = new HashMap<>();
+        gmiMap.put("dummy", "value");
+        ReflectionTestUtils.setField(service, "log", Logger.getLogger("mocked"));
+
+        Field getGmiParamsField = TmlOnExchangeApsServiceImpl.class.getDeclaredField("log");
+        getGmiParamsField.setAccessible(true);
+        getGmiParamsField.set(service, Logger.getLogger("mocked"));
+
+        // Override private methods via ReflectionTestUtils
+        ReflectionTestUtils.invokeMethod(service, "filterIfBlockOrEfs", alloc); // optional if logic depends on it
+
+        // Mock private method responses by subclassing or spying
+        TmlOnExchangeApsServiceImpl spyService = Mockito.spy(service);
+        doReturn(true).when(spyService).isBamlExecFirm(any());
+        doReturn(gmiMap).when(spyService).getGmiParams(any(), any(), any(), any());
+
+        // Stub getClearHouseFeed
+        TClearhouseMaster chMaster = new TClearhouseMaster();
+        chMaster.setId(1L);
+        chMaster.setLastQuantityI(100);
+        chMaster.setTradePriceD(new BigDecimal("10.5"));
+        chMaster.setExecIDC("XYZTN123456");
+
+        doReturn(Arrays.asList(chMaster)).when(spyService).getClearHouseFeed(anyString(), anyMap());
+
+        boolean result = spyService.checkForEachFill(fills, chMsgs, accounts);
+
+        assertTrue(result);
+        assertEquals(1, chMsgs.size());
+        assertTrue(fills.get(0).isMatchFound());
+    }
+}
+
+
+
+@Test
 public void testCheckForEachFill_allPathsCovered() throws Exception {
     // Setup
     TmlApsCHFeedUtil utilSpy = Mockito.spy(new TmlApsCHFeedUtil());
