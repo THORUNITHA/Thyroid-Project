@@ -1,4 +1,44 @@
-  import static org.junit.Assert.*;
+@Test
+public void testPopulateStatusMsgWithGroup_BufferLengthTruncation() {
+    // Setup - Create message that will exceed 4000 chars when combined with IDs
+    String msg = "Status: ";
+    
+    // Create enough TClearhouseMaster objects to exceed the limit
+    List<TClearhouseMaster> longList = new ArrayList<>();
+    for (long i = 1; i <= 500; i++) {
+        TClearhouseMaster master = new TClearhouseMaster();
+        master.setId(i);
+        longList.add(master);
+    }
+    
+    // Execute
+    String result = populateStatusMsgWithGroup(msg, longList);
+    
+    // Verify the truncation
+    assertEquals(3999, result.length()); // Should be exactly 3999 chars
+    assertTrue(result.startsWith(msg)); // Should start with original message
+    assertTrue(result.endsWith(",")); // Should end with comma from last ID
+    
+    // Verify the truncation point doesn't cut a number in half
+    String lastNumber = result.substring(result.lastIndexOf(",") - 4, result.lastIndexOf(","));
+    assertTrue(lastNumber.matches("\\d+")); // Should be a complete number
+    
+    // Verify the content before truncation is preserved
+    assertTrue(result.contains("1,2,3,")); // Early items should be present
+    
+    // Edge case: Verify behavior when exactly at boundary
+    String exactSizeMsg = "X".repeat(3990);
+    List<TClearhouseMaster> smallList = new ArrayList<>();
+    TClearhouseMaster m = new TClearhouseMaster();
+    m.setId(123L);
+    smallList.add(m);
+    
+    String exactResult = populateStatusMsgWithGroup(exactSizeMsg, smallList);
+    assertEquals(3999, exactResult.length()); // "X...X123," = exactly 3999
+}
+
+
+import static org.junit.Assert.*;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.commons.collections4.CollectionUtils;
