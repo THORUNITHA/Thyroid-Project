@@ -1,4 +1,151 @@
- @Test
+ import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.slf4j.Logger;
+
+@RunWith(MockitoJUnitRunner.class)
+public class ClearHouseServiceTest {
+
+    @Mock
+    private TmlQueryDao tmlQueryDao;
+    
+    @Mock
+    private Logger log;
+    
+    @InjectMocks
+    private YourServiceClass yourServiceClass; // Replace with actual class name
+    
+    private Map<String, Object> testMap;
+    private List<TClearhouseMaster> mockResultSet;
+    private final String TEST_QUERY = "SELECT * FROM t_clearhouse_master";
+
+    @Before
+    public void setUp() {
+        testMap = new HashMap<>();
+        mockResultSet = new ArrayList<>();
+        
+        // Setup test data
+        TClearhouseMaster tcm1 = new TClearhouseMaster();
+        tcm1.setId(1001L);
+        
+        TClearhouseMaster tcm2 = new TClearhouseMaster();
+        tcm2.setId(1002L);
+        
+        TClearhouseMaster tcm3 = new TClearhouseMaster();
+        tcm3.setId(1003L);
+        
+        mockResultSet.add(tcm1);
+        mockResultSet.add(tcm2);
+        mockResultSet.add(tcm3);
+    }
+
+    @Test
+    public void testGetClearHouseFeed_WithFiltering() {
+        // Setup
+        List<Long> idsToFilter = Arrays.asList(1001L, 1003L);
+        testMap.put("ID_I", idsToFilter);
+        
+        when(tmlQueryDao.queryForRowMapperInCaluse(eq(TEST_QUERY), eq(testMap), any(TClearHouseMasterMapper.class)))
+            .thenReturn(new ArrayList<>(mockResultSet));
+        
+        // Execute
+        List<TClearhouseMaster> result = yourServiceClass.getClearHouseFeed(TEST_QUERY, testMap);
+        
+        // Verify
+        assertEquals(1, result.size());
+        assertEquals(Long.valueOf(1002L), result.get(0).getId());
+        
+        // Verify logging
+        verify(log).info("getClearHouseFeed query is: " + TEST_QUERY);
+        verify(log).info("getClearHouseFeed map is: " + testMap);
+        verify(log, atLeastOnce()).info(contains("ID_I from t_clearhouse_master that its currently considering"));
+        verify(log).info("~ID_I being removed = 1001, Length of resultSetList before removal = 3");
+        verify(log).info("-Length of resultSetList after removal = 2");
+        verify(log).info("~ID_I from t_clearhouse_master that its removing from result set = 1001");
+        verify(log).info("~ID_I being removed = 1003, Length of resultSetList before removal = 2");
+        verify(log).info("-Length of resultSetList after removal = 1");
+        verify(log).info("~ID_I from t_clearhouse_master that its removing from result set = 1003");
+    }
+
+    @Test
+    public void testGetClearHouseFeed_NoFiltering() {
+        // Setup - no IDs to filter
+        when(tmlQueryDao.queryForRowMapperInCaluse(eq(TEST_QUERY), eq(testMap), any(TClearHouseMasterMapper.class)))
+            .thenReturn(new ArrayList<>(mockResultSet));
+        
+        // Execute
+        List<TClearhouseMaster> result = yourServiceClass.getClearHouseFeed(TEST_QUERY, testMap);
+        
+        // Verify
+        assertEquals(3, result.size());
+        verify(log, never()).info(contains("ID_I being removed"));
+    }
+
+    @Test
+    public void testGetClearHouseFeed_NullResultSet() {
+        // Setup
+        List<Long> idsToFilter = Arrays.asList(1001L);
+        testMap.put("ID_I", idsToFilter);
+        
+        when(tmlQueryDao.queryForRowMapperInCaluse(anyString(), anyMap(), any()))
+            .thenReturn(null);
+        
+        // Execute
+        List<TClearhouseMaster> result = yourServiceClass.getClearHouseFeed(TEST_QUERY, testMap);
+        
+        // Verify
+        assertNull(result);
+        verify(log, never()).info(contains("ID_I being removed"));
+    }
+
+    @Test
+    public void testGetClearHouseFeed_NullIdList() {
+        // Setup - null ID list
+        testMap.put("ID_I", null);
+        
+        when(tmlQueryDao.queryForRowMapperInCaluse(eq(TEST_QUERY), eq(testMap), any(TClearHouseMasterMapper.class)))
+            .thenReturn(new ArrayList<>(mockResultSet));
+        
+        // Execute
+        List<TClearhouseMaster> result = yourServiceClass.getClearHouseFeed(TEST_QUERY, testMap);
+        
+        // Verify
+        assertEquals(3, result.size());
+        verify(log, never()).info(contains("ID_I being removed"));
+    }
+
+    @Test
+    public void testGetClearHouseFeed_EmptyIdList() {
+        // Setup - empty ID list
+        testMap.put("ID_I", new ArrayList<>());
+        
+        when(tmlQueryDao.queryForRowMapperInCaluse(eq(TEST_QUERY), eq(testMap), any(TClearHouseMasterMapper.class)))
+            .thenReturn(new ArrayList<>(mockResultSet));
+        
+        // Execute
+        List<TClearhouseMaster> result = yourServiceClass.getClearHouseFeed(TEST_QUERY, testMap);
+        
+        // Verify
+        assertEquals(3, result.size());
+        verify(log, never()).info(contains("ID_I being removed"));
+    }
+}
+
+
+
+@Test
 public void testProcessSumByBroker_WithValidAllocations() {
     // Mock dependencies
     TAllocationGenericMapper mapper = mock(TAllocationGenericMapper.class);
