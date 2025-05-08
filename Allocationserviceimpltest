@@ -1,3 +1,38 @@
+ @Test
+public void testProcessSumByBroker_WithValidAllocations() {
+    // Mock dependencies
+    TAllocationGenericMapper mapper = mock(TAllocationGenericMapper.class);
+    AllocContainer allocContainer = mock(AllocContainer.class);
+    
+    // Setup test data
+    List<TAllocationGenericId> allocations = new ArrayList<>();
+    TAllocationGenericId alloc1 = new TAllocationGenericId();
+    alloc1.setApsGroupKeyByBroker("BROKER1");
+    allocations.add(alloc1);
+    
+    List<TAllocationGenericId> fills = new ArrayList<>();
+    fills.add(alloc1);
+    
+    List<TClearhouseMaster> chMsgs = new ArrayList<>();
+    chMsgs.add(new TClearhouseMaster());
+    
+    // Mock behavior
+    when(getAllocations(anyString(), isNull(), any(TAllocationGenericMapper.class)))
+        .thenReturn(allocations);
+    when(allocContainer.getFills()).thenReturn(fills);
+    when(checkIfFillsSumMatches(eq(fills), anyList(), anyString())).thenReturn(true);
+    
+    // Execute
+    processSumByBroker();
+    
+    // Verify
+    verify(log, times(2)).info(anyString());
+    verify(log, never()).warn(anyString());
+    verify(allocContainer, atLeastOnce()).getFills();
+    verify(updateStatus(any(MessageStatus.class), anyList(), any(AllocContainer.class), anyString()));
+}
+
+
 @Test
 public void testPopulateStatusMsgWithGroup_BufferLengthTruncation() {
     // Setup - Create message that will exceed 4000 chars when combined with IDs
