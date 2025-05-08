@@ -1,4 +1,83 @@
- @RunWith(MockitoJUnitRunner.class)
+  @RunWith(MockitoJUnitRunner.class)
+public class TmlOnExchangeApsServiceImplTest {
+
+    // Create a subclass that overrides the protected method
+    public static class TestableTmlOnExchangeApsServiceImpl extends TmlOnExchangeApsServiceImpl {
+
+        private boolean mockBamlExecReturn = true;
+
+        // Expose isBamlExecFirm privately via a switchable stub method
+        private boolean isBamlExecFirm(TAllocationGenericId alloc) {
+            return mockBamlExecReturn;
+        }
+
+        public void setMockBamlExecFirmReturn(boolean value) {
+            this.mockBamlExecReturn = value;
+        }
+
+        @Override
+        protected Map<String, Object> getGmiParams(TAllocationGenericId alloc, List<String> accounts, List<Long> idIL, List<String> execFirmL) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("dummyKey", "dummyValue");
+            return map;
+        }
+
+        @Override
+        protected List<TClearhouseMaster> getClearHouseFeed(String query, Map<String, Object> params) {
+            TClearhouseMaster ch = new TClearhouseMaster();
+            ch.setId(101L);
+            ch.setLastQuantityI(100);
+            ch.setTradePriceD(new BigDecimal("50.00"));
+            ch.setExecIDC("TN123456");
+
+            return Collections.singletonList(ch);
+        }
+    }
+
+    @InjectMocks
+    private TestableTmlOnExchangeApsServiceImpl service;
+
+    @Before
+    public void setup() {
+        Set<String> cmeGroupSet = new HashSet<>();
+        cmeGroupSet.add("CME");
+
+        ReflectionTestUtils.setField(service, "cmeGroup", cmeGroupSet);
+        ReflectionTestUtils.setField(service, "iceUs", new HashSet<>());
+    }
+
+    @Test
+    public void testCheckForEachFill_withBamlExecFirmMatch() throws Exception {
+        // Create a fill with CME exchange and TON ID
+        TAllocationGenericId alloc = new TAllocationGenericId();
+        alloc.setGmiExchCdC("CME");
+        alloc.setQuantityI(100);
+        alloc.setPriceD(new BigDecimal("50.00"));
+        alloc.setTonIdC("XYZTN123456");  // Has "TN" to extract substring
+
+        List<TAllocationGenericId> fills = Collections.singletonList(alloc);
+        List<TClearhouseMaster> chMsgs = new ArrayList<>();
+        List<String> accounts = Collections.singletonList("ACC123");
+
+        // Force private method isBamlExecFirm to return true via reflection
+        Method isBamlExecFirmMethod = TmlOnExchangeApsServiceImpl.class.getDeclaredMethod("isBamlExecFirm", TAllocationGenericId.class);
+        isBamlExecFirmMethod.setAccessible(true);
+
+        boolean isBaml = (boolean) isBamlExecFirmMethod.invoke(service, alloc);
+        Assert.assertTrue(isBaml); // Should be true for this scenario
+
+        boolean result = service.checkForEachFill(fills, chMsgs, accounts);
+
+        Assert.assertTrue(result);
+        Assert.assertEquals(1, chMsgs.size());
+        Assert.assertTrue(fills.get(0).isMatchFound());
+    }
+}
+
+
+
+
+@RunWith(MockitoJUnitRunner.class)
 public class TmlOnExchangeApsServiceImplTest {
 
     // Testable subclass to override protected/private methods
