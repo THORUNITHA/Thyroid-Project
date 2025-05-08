@@ -1,4 +1,56 @@
- import static org.junit.Assert.*;
+ @Test
+public void testCheckForEachFill_allPathsCovered() throws Exception {
+    // Setup
+    TmlApsCHFeedUtil utilSpy = Mockito.spy(new TmlApsCHFeedUtil());
+    ReflectionTestUtils.setField(utilSpy, "tmlQueryDao", mock(QueryDaoJdbc.class));
+    ReflectionTestUtils.setField(utilSpy, "cmeGroup", new HashSet<>(Arrays.asList("CME")));
+    ReflectionTestUtils.setField(utilSpy, "iceUs", new HashSet<>(Arrays.asList("ICE")));
+
+    TAllocationGenericId alloc = new TAllocationGenericId();
+    alloc.setQuantityI(100);
+    alloc.setPriceD(new BigDecimal("10.5"));
+    alloc.setGmiExchCdC("CME");
+    alloc.setTonIdC("ABC123TN4567890");
+    alloc.setExchangeTradeIdC("TRD123");
+    alloc.setDownstreamStatusSw("NOT_MATCHED");
+
+    List<TAllocationGenericId> fills = Arrays.asList(alloc);
+    List<TClearhouseMaster> chMsgs = new ArrayList<>();
+    List<String> accounts = Arrays.asList("ACC1");
+
+    // Mock getGmiParams to return expected map
+    Map<String, Object> gmiParams = new HashMap<>();
+    gmiParams.put("dummy", "val");
+    doReturn(gmiParams).when(utilSpy).getGmiParams(any(), any(), any(), any());
+
+    // Mock getClearHouseFeed (private) using reflection to return a matching item
+    TClearhouseMaster ch = new TClearhouseMaster();
+    ch.setId(999L);
+    ch.setExecIdC("TN4567890");
+    ch.setLastQuantityI(BigDecimal.valueOf(100));
+    ch.setTradePriceD(new BigDecimal("10.5"));
+    ch.setAveragePriceD(new BigDecimal("10.5"));
+    ch.setTradeIdC("TRD123");
+
+    Method setPrivateList = TmlApsCHFeedUtil.class.getDeclaredMethod("getClearHouseFeed", String.class, Map.class);
+    setPrivateList.setAccessible(true);
+    doReturn(Arrays.asList(ch)).when(utilSpy, "getClearHouseFeed", anyString(), anyMap());
+
+    // Use reflection to invoke the method under test
+    Method method = TmlApsCHFeedUtil.class.getDeclaredMethod("checkForEachFill",
+            List.class, List.class, List.class);
+    method.setAccessible(true);
+    boolean result = (boolean) method.invoke(utilSpy, fills, chMsgs, accounts);
+
+    // Assert
+    assertTrue(result);
+    assertEquals(1, chMsgs.size());
+    assertTrue(fills.get(0).isMatchFound());
+}
+
+
+
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 import java.util.*;
 import org.apache.commons.collections4.CollectionUtils;
