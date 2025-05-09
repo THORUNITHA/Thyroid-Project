@@ -1,4 +1,9 @@
-  import org.junit.Before;
+We don’t have access to the corpftp remote host to download files in the DEV and UAT environments. Could you please help us with getting access for UAT?
+
+Let me know if anything is needed from our side.
+
+
+import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Spy;
