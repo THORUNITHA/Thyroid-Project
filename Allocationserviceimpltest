@@ -1,3 +1,34 @@
+#!/bin/bash
+
+PORT=22601
+
+# Find the process using the port
+TARGET_PID=$(lsof -ti :$PORT)
+
+if [ -n "$TARGET_PID" ]; then
+  echo "Stopping process on port $PORT with PID: $TARGET_PID"
+
+  # Attempt a graceful shutdown using the Java command
+  "$JAVA_HOME/bin/java" -cp "$IMI_BIN/tmltradeloader-2.0.13.jar" \
+  -Denv="$current_env" \
+  com.baml.tml.tmltradeloader.main.TmlTradeLoaderNamMain shutdown "$PORT"
+
+  sleep 5
+
+  # Check if the process is still running
+  if ps -p "$TARGET_PID" > /dev/null; then
+    echo "Process still running on port $PORT. Force killing..."
+    kill -9 "$TARGET_PID"
+  fi
+
+  echo "Shutdown complete."
+else
+  echo "No process found on port $PORT."
+fi
+
+
+
+
 We don’t have access to the corpftp remote host to download files in the DEV and UAT environments. Could you please help us with getting access for UAT?
 
 Let me know if anything is needed from our side.
