@@ -1,3 +1,51 @@
+  -- Turn off extra output
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON           -- Include column headers
+SET PAGESIZE 50000       -- Prevents page breaks
+SET LINESIZE 1000        -- Max line width for long columns
+SET TRIMSPOOL ON         -- Removes trailing spaces
+SET COLSEP ','           -- Use comma as delimiter (CSV style)
+
+-- Start writing to file (change path as needed)
+SPOOL C:\exports\allocation_all.csv
+
+-- Your Query
+SELECT 
+    trade_date_dt,
+    maturity_date_dt,
+    free1_c,
+    free2_c,
+    free3_c,
+    free4_c,
+    free5_c
+FROM tml.t_allocation_raw_bkp01
+WHERE (
+    (
+        UPPER(free1_c) LIKE '%MAY%CBT%' OR
+        UPPER(free2_c) LIKE '%MAY%CBT%' OR
+        UPPER(free3_c) LIKE '%MAY%CBI%' OR
+        UPPER(free4_c) LIKE '%MAY%CBT%' OR
+        UPPER(free5_c) LIKE '%MAY%CBT%'
+    )
+    AND trade_date_dt BETWEEN TO_DATE('04-APR-2025', 'DD-MON-YYYY') AND TO_DATE('09-MAY-2025', 'DD-MON-YYYY')
+)
+UNION
+SELECT 
+    trade_date_dt,
+    maturity_date_dt,
+    free1_c,
+    free2_c,
+    free3_c,
+    free4_c,
+    free5_c
+FROM tml.t_allocation_raw_bkp01
+WHERE gmi_contract_ed_o IN ('C-')
+AND maturity_date_dt = TO_DATE('01-MAY-2025', 'DD-MON-YYYY')
+AND trade_date_dt BETWEEN TO_DATE('04-APR-2025', 'DD-MON-YYYY') AND TO_DATE('09-MAY-2025', 'DD-MON-YYYY');
+
+-- End file
+SPOOL OFF
 
 
 SET COLSEP ','
