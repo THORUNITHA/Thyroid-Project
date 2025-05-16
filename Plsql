@@ -1,0 +1,75 @@
+  DECLARE
+    -- Dates to export (adjust as needed)
+    v_start_date DATE := TO_DATE('04-APR-2025', 'DD-MON-YYYY');
+    v_end_date   DATE := TO_DATE('07-APR-2025', 'DD-MON-YYYY');
+
+    -- Dynamic values
+    v_current_date DATE;
+    v_file_name    VARCHAR2(100);
+    v_line         VARCHAR2(32767);
+    l_file         UTL_FILE.FILE_TYPE;
+
+    -- Cursor to fetch one day's data
+    CURSOR c_export(p_date DATE) IS
+        SELECT *
+        FROM tml.t_allocation_raw_bkp01
+        WHERE (
+            (
+                UPPER(free1_c) LIKE '%MAY%CBT%' OR
+                UPPER(free2_c) LIKE '%MAY%CBT%' OR
+                UPPER(free3_c) LIKE '%MAY%CBI%' OR
+                UPPER(free4_c) LIKE '%MAY%CBT%' OR
+                UPPER(free5_c) LIKE '%MAY%CBT%'
+            )
+            AND trade_date_dt = p_date
+        )
+        UNION
+        SELECT *
+        FROM tml.t_allocation_raw_bkp01
+        WHERE gmi_contract_ed_o IN ('C-')
+        AND maturity_date_dt = TO_DATE('01-MAY-2025', 'DD-MON-YYYY')
+        AND trade_date_dt = p_date;
+
+BEGIN
+    v_current_date := v_start_date;
+
+    WHILE v_current_date <= v_end_date LOOP
+        -- Format file name: allocation_04-APR-2025.csv
+        v_file_name := 'allocation_' || TO_CHAR(v_current_date, 'DD-MON-YYYY') || '.csv';
+        v_file_name := REPLACE(v_file_name, '-', '_'); -- Remove dashes for safe filenames
+
+        -- Open file for writing
+        l_file := UTL_FILE.FOPEN('EXPORT_DIR', v_file_name, 'W');
+
+        -- Export data
+        FOR rec IN c_export(v_current_date) LOOP
+            -- Adjust columns as needed here
+            v_line := rec.trade_date_dt || ',' ||
+                      rec.maturity_date_dt || ',' ||
+                      rec.free1_c || ',' ||
+                      rec.free2_c || ',' ||
+                      rec.free3_c || ',' ||
+                      rec.free4_c || ',' ||
+                      rec.free5_c;
+            UTL_FILE.PUT_LINE(l_file, v_line);
+        END LOOP;
+
+        UTL_FILE.FCLOSE(l_file);
+        DBMS_OUTPUT.PUT_LINE('Exported data for ' || TO_CHAR(v_current_date, 'DD-MON-YYYY') ||
+                             ' to file: ' || v_file_name);
+
+        v_current_date := v_current_date + 1;
+    END LOOP;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+        IF UTL_FILE.IS_OPEN(l_file) THEN
+            UTL_FILE.FCLOSE(l_file);
+        END IF;
+END;
+
+CREATE OR REPLACE DIRECTORY EXPORT_DIR AS '/u01/app/oracle/exports'; -- Replace with actual path
+GRANT READ, WRITE ON DIRECTORY EXPORT_DIR TO your_user;
+
+
+
