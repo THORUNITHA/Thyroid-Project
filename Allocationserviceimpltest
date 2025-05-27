@@ -4,6 +4,59 @@ SCRIPT_LIST="/tmp/start_scripts.txt"
 ERROR_FILE="/tmp/process_errors_$(date +%F).log"
 > "$ERROR_FILE"
 
+echo "=== Starting all scripts from: $SCRIPT_LIST ==="
+while IFS= read -r script; do
+    [[ -z "$script" || ! -x "$script" ]] && continue
+
+    echo "Starting: $script"
+    bash "$script" &
+    
+    if [[ $? -eq 0 ]]; then
+        echo "Started successfully: $script"
+    else
+        echo "Failed to start: $script"
+    fi
+done < "$SCRIPT_LIST"
+
+wait
+echo "=== All processes started. Scanning logs for 'ERROR' ==="
+
+while IFS= read -r script; do
+    [[ -z "$script" || ! -f "$script" ]] && continue
+
+    # Get base process directory (e.g., /apps/tml/Allocation/processes/process1)
+    process_dir=$(dirname "$(dirname "$script")")
+
+    # Look for logs or log directory
+    log_dir=""
+    [[ -d "$process_dir/logs" ]] && log_dir="$process_dir/logs"
+    [[ -d "$process_dir/log" ]] && log_dir="$process_dir/log"
+
+    [[ -z "$log_dir" ]] && continue
+
+    # Find log files modified today and scan for 'ERROR'
+    find "$log_dir" -type f -name "*.log" -newermt "$(date +%Y-%m-%d)" | while read -r logfile; do
+        if grep -q "ERROR" "$logfile"; then
+            echo "---- Process: $process_dir ----" >> "$ERROR_FILE"
+            echo "Log File: $logfile" >> "$ERROR_FILE"
+            grep "ERROR" "$logfile" >> "$ERROR_FILE"
+            echo "" >> "$ERROR_FILE"
+        fi
+    done
+done < "$SCRIPT_LIST"
+
+echo "=== Done. Errors saved to $ERROR_FILE ==="
+
+
+
+
+
+#!/bin/bash
+
+SCRIPT_LIST="/tmp/start_scripts.txt"
+ERROR_FILE="/tmp/process_errors_$(date +%F).log"
+> "$ERROR_FILE"
+
 echo "Starting all scripts listed in $SCRIPT_LIST..."
 while IFS= read -r script; do
     # Skip blank lines or malformed lines
