@@ -1,3 +1,11 @@
+ Start all relevant TML processes using predefined start scripts.
+Wait for a configurable delay to allow processes to initialize and generate logs.
+Scan associated log files for errors or exceptions.
+Generate a consolidated report of any errors found, including process name, log file, and error details.
+Support stopping processes using stop scripts as needed.
+
+
+
 #!/bin/bash
 
 SCRIPT_LIST="/tmp/start_scripts.txt"
