@@ -1,3 +1,35 @@
+ #!/bin/bash
+
+STOP_SCRIPT_LIST="/tmp/stopall.txt"
+STOP_LOG_FILE="/tmp/process_stop_log_$(date +%F_%H-%M-%S).log"
+> "$STOP_LOG_FILE"
+
+echo "=== Stopping all processes from: $STOP_SCRIPT_LIST ===" | tee -a "$STOP_LOG_FILE"
+
+while IFS= read -r stop_script; do
+    [[ -z "$stop_script" || ! -x "$stop_script" ]] && continue
+
+    echo "Stopping: $stop_script" | tee -a "$STOP_LOG_FILE"
+    bash "$stop_script" >> "$STOP_LOG_FILE" 2>&1
+
+    if [[ $? -eq 0 ]]; then
+        echo "Stopped successfully: $stop_script" | tee -a "$STOP_LOG_FILE"
+    else
+        echo "Failed to stop: $stop_script" | tee -a "$STOP_LOG_FILE"
+    fi
+
+    echo "" >> "$STOP_LOG_FILE"
+done < "$STOP_SCRIPT_LIST"
+
+echo "=== All stop scripts executed ===" | tee -a "$STOP_LOG_FILE"
+echo "Log saved to: $STOP_LOG_FILE"
+
+
+
+
+
+
+
 #!/bin/bash
 
 STOP_SCRIPT_LIST="/tmp/stopall.txt"
