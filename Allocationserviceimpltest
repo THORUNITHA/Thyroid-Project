@@ -1,4 +1,28 @@
- Given the automation script has a list of start scripts for all TML processes
+#!/bin/bash
+
+STOP_SCRIPT_LIST="/tmp/stopall.txt"
+
+echo "=== Stopping all processes from: $STOP_SCRIPT_LIST ==="
+
+while IFS= read -r stop_script; do
+    [[ -z "$stop_script" || ! -x "$stop_script" ]] && continue
+
+    echo "Stopping: $stop_script"
+    bash "$stop_script"
+
+    if [[ $? -eq 0 ]]; then
+        echo "Stopped successfully: $stop_script"
+    else
+        echo "Failed to stop: $stop_script"
+    fi
+done < "$STOP_SCRIPT_LIST"
+
+echo "=== All stop scripts executed ==="
+
+
+
+
+Given the automation script has a list of start scripts for all TML processes
 When the automation script runs and starts all the processes successfully
 Then it should wait a configurable time (e.g., 2-5 minutes), then scan each process’s logs folder for entries containing “ERROR”
 
