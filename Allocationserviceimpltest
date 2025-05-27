@@ -1,4 +1,10 @@
- Start all relevant TML processes using predefined start scripts.
+ Given the automation script has a list of start scripts for all TML processes
+When the automation script runs and starts all the processes successfully
+Then it should wait a configurable time (e.g., 2-5 minutes), then scan each process’s logs folder for entries containing “ERROR”
+
+
+
+Start all relevant TML processes using predefined start scripts.
 Wait for a configurable delay to allow processes to initialize and generate logs.
 Scan associated log files for errors or exceptions.
 Generate a consolidated report of any errors found, including process name, log file, and error details.
