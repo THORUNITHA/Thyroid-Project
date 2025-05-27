@@ -1,3 +1,52 @@
+#!/bin/bash
+
+SCRIPT_LIST="/tmp/start_scripts.txt"
+ERROR_FILE="/tmp/process_errors_$(date +%F).log"
+> "$ERROR_FILE"
+
+echo "Starting all scripts listed in $SCRIPT_LIST..."
+while IFS= read -r script; do
+    # Skip blank lines or malformed lines
+    [[ -z "$script" || ! -x "$script" ]] && continue
+
+    echo "Starting: $script"
+    bash "$script" &
+done
+
+wait  # Optional: Wait for all start scripts to finish
+echo "All processes started. Now checking logs..."
+
+# Search for logs in related directories
+while IFS= read -r script; do
+    # Skip blank or invalid entries
+    [[ -z "$script" || ! -f "$script" ]] && continue
+
+    # Get parent directory (process dir)
+    process_dir=$(dirname "$script")
+    process_base=$(echo "$process_dir" | sed -E 's|/scripts.*||')
+
+    # Find log or logs directory
+    log_dir=""
+    [[ -d "$process_base/logs" ]] && log_dir="$process_base/logs"
+    [[ -d "$process_base/log" ]] && log_dir="$process_base/log"
+
+    [[ -z "$log_dir" ]] && continue
+
+    # Find log files modified today and search for ERRORs
+    find "$log_dir" -type f -name "*.log" -newermt "$(date +%Y-%m-%d)" | while read -r logfile; do
+        if grep -q "ERROR" "$logfile"; then
+            echo "---- Process: $script ----" >> "$ERROR_FILE"
+            echo "Log File: $logfile" >> "$ERROR_FILE"
+            grep "ERROR" "$logfile" >> "$ERROR_FILE"
+            echo "" >> "$ERROR_FILE"
+        fi
+    done
+done < "$SCRIPT_LIST"
+
+echo "Done. Error log saved to $ERROR_FILE"
+
+
+
 . Work-from-Home Option from the 6th Month of Pregnancy
 "Introduce a flexible work-from-home option starting from the 6th month of pregnancy to support the health, comfort, and safety of expecting mothers while ensuring continued productivity."
 2. Work-from-Home Support Until the Child Turns 1 Year Old
