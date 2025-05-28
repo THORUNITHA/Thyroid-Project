@@ -1,3 +1,19 @@
+Here’s a refined version for **“How was the issue identified”**:
+
+---
+
+### **How Was the Issue Identified?**
+
+The issue was initially flagged by users who observed over 2,000 trade breaks and suspected that missing allocations were the root cause. To investigate, the TML team attempted to replicate the issue using the UAT environment. During this process, they discovered that the application running on the UAT server was connecting to the production FTP servers. Further analysis of the FTP logs confirmed that files meant for production had been downloaded by the UAT process using production credentials. This led to the conclusion that the misconfiguration in the start script was causing the unintended consumption of live files from a non-production environment.
+
+---
+
+Let me know if you'd like this adapted for a formal report or summarized further.
+
+
+
+
+
 Here’s a structured draft to help you fill out the questions based on your incident summary regarding the **TMLFTP module misconfiguration and its impact**:
 
 ---
