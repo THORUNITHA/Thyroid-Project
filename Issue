@@ -1,0 +1,124 @@
+Here’s a structured draft to help you fill out the questions based on your incident summary regarding the **TMLFTP module misconfiguration and its impact**:
+
+---
+
+### ✅ **Questions and Answers**
+
+#### **1. Issue Summary**
+
+On May 12, 43 files across different clients were not downloaded due to the TMLFTP module running from a UAT environment but connecting to production FTP servers. This misconfiguration led to missed allocations and over 2,000 trade breaks, especially impacting the client MANAHL. Testing scripts were inadvertently using production credentials.
+
+---
+
+#### **2. Root Cause**
+
+The start script for the TMLFTP module had hardcoded production FTP and database configurations. During testing from the UAT environment, the module connected to production B2B/CorpFTPS servers, leading to file consumption and missed allocations in production. UAT lacked dedicated configuration properties, violating environment segregation standards.
+
+---
+
+#### **3. Worst Case Scenario**
+
+Continued exposure could lead to:
+
+* Undetected missed allocations
+* Regulatory non-compliance
+* Data corruption in production from UAT testing
+* Severe client dissatisfaction
+* Breach of internal controls and audit failures
+
+---
+
+#### **4. Compensating Controls**
+
+* Immediate replay of missed files from UAT to Production.
+* Manual validation and reconciliation by Client Onboarding and Operations team.
+* Introduction of **environment-specific configuration properties**.
+* Disable all production connectivity from UAT environments going forward.
+
+---
+
+#### **5. How Was the Issue Identified?**
+
+The issue was flagged by users who observed over 2,000 trade breaks and suspected missing allocations. The Ops team investigated the FTP logs and identified that files were being consumed by a UAT process using production credentials.
+
+---
+
+#### **6. Details**
+
+* Issue date: May 12, 2025
+* Impact: 43 files across clients, over 2,000 trade breaks
+* Timeframe of impact: 6:15 AM onwards
+* Resolution: Manual file reconciliation and reprocessing from UAT to production
+
+---
+
+#### **7. Internal Controls & Operational Risk**
+
+* Environment boundary controls were weak.
+* No validation in the start script to detect incorrect environment use.
+* No CI/CD checks to enforce environment variables.
+
+---
+
+#### **8. Laws, Regulations or Internal Policies/Standards**
+
+* Violation of internal change management and environment segregation policies.
+* Potential breach of data handling standards and access control protocols.
+
+---
+
+#### **9. Compliance**
+
+* High risk of audit and compliance breach due to:
+
+  * Uncontrolled production access
+  * Testing activities affecting live systems
+
+---
+
+#### **10. Financial Impact**
+
+* Operational hours spent on reconciliation
+* Potential monetary penalties or reputational risk if not corrected
+* Delayed client reporting and potential SLA breaches
+
+---
+
+#### **11. Financial, Regulatory or Risk Reporting**
+
+* May need to report to internal risk and compliance units
+* Could be included in operational risk events log
+* High priority for post-incident review
+
+---
+
+#### **12. Urgency & Breadth of Impact**
+
+**High urgency**
+
+* Affected multiple clients
+* Disrupted core allocation flow
+* Involved both tech and operations teams for over 24 hours
+
+---
+
+#### **13. Customer Impact Rating**
+
+**High**
+
+* Multiple clients impacted
+* Trade breaks reported
+* Loss of confidence in allocation reliability
+
+---
+
+#### **14. Justification for Severity**
+
+* Real-time production data was manipulated from a test environment
+* Led to missing trades and client delivery delays
+* Violated multiple internal policies and security guidelines
+* Required a multi-team coordinated effort to remediate
+
+---
+
+Would you like this in a Word document format or structured for Jira/Confluence input?
